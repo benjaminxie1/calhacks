@@ -5,6 +5,8 @@
 set -u
 cd "$(dirname "$0")/.."
 export LIVE_AUTOPULL=${LIVE_AUTOPULL:-1}
+# Team relay calls go through fetch, which ignores HTTPS_PROXY unless told.
+[ -n "${TEAM_RELAY:-}" ] && [ -n "${HTTPS_PROXY:-}" ] && export NODE_USE_ENV_PROXY=1
 while true; do
   lock=$(git rev-parse HEAD:package-lock.json 2>/dev/null)
   git pull --ff-only -q origin "${PULL_BRANCH:-scrabblebot}" || echo "[live] git pull failed"

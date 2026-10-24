@@ -29,6 +29,14 @@ export interface View {
   auctioned: Counts; // every letter revealed so far, current included
   opps: Opp[]; // public view of the other seats
   revealed: Counts; // opponents' hidden starting tiles their plays exposed
+  // For team play (src/team.ts):
+  seat?: number;
+  seats?: number[]; // seat of each opps entry
+  self?: Opp; // our own public view
+  selfRevealed?: Counts; // our hidden tiles our plays exposed
+  auction?: number; // index of this auction in the match
+  matchKey?: number; // a number every seat shares, fixed per match
+  racks?: Counts[]; // every seat's true rack: only for testing team play with shared racks
 }
 
 export interface Player {
@@ -236,18 +244,27 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
     bal[i] += rw;
     score[i] += rw;
   };
+  let auctionNo = 0;
   const view = (i: number, letter: number): View => {
     const opps: Opp[] = [];
+    const seats: number[] = [];
     const revealed = emptyCounts();
     pub.forEach((t, j) => {
       if (j === i) return;
+      seats.push(j);
       t.balance = bal[j]!;
       t.score = score[j]!;
       opps.push(t.view());
       const rv = t.revealed();
       for (let c = 0; c < 26; c++) revealed[c] += rv[c]!;
     });
-    return { rack: Int16Array.from(racks[i]!), balance: bal[i]!, letter, bagLeft: bagTotal, firstPrice, auctioned, opps, revealed };
+    const me = pub[i]!;
+    me.balance = bal[i]!;
+    me.score = score[i]!;
+    return {
+      rack: Int16Array.from(racks[i]!), balance: bal[i]!, letter, bagLeft: bagTotal, firstPrice, auctioned, opps, revealed,
+      seat: i, seats, self: me.view(), selfRevealed: me.revealed(), auction: auctionNo, matchKey: seed, racks,
+    };
   };
   const realPlays = (letter: number, final: boolean) => {
     players.forEach((p, i) => {
@@ -275,6 +292,7 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
     }
     log.push({ letter: letter!, paid: winner >= 0 ? paid : 0, top: live[0]?.a ?? 0, winner });
     players.forEach((p, i) => p.observe(letter!, paid, i === winner));
+    auctionNo++;
     if (winner >= 0 && players[winner]!.isSim) {
       // findBestPlayable(rack, 3): the longest word of 3+ letters.
       const w = spellable(d, racks[winner]!, 3).sort((a, b) => d.len[b]! - d.len[a]! || (d.words[a]! < d.words[b]! ? -1 : 1))[0];

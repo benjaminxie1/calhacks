@@ -1,6 +1,7 @@
 // Seat kinds shared by run-sim and bench.
 import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
+import { allyBot } from "./team.js";
 import { brainBot, fieldModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
@@ -8,11 +9,14 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
   const r = rng(seed0 * 7919);
   const extra = process.env.PARAMS ? JSON.parse(process.env.PARAMS) : {};
   const extraB = process.env.PARAMS_B ? JSON.parse(process.env.PARAMS_B) : {};
+  const allies = new Set(kinds.flatMap((k, i) => (k === "ally" ? [i] : [])));
+  const team = process.env.TEAM ? JSON.parse(process.env.TEAM) : undefined;
   return kinds.map((kind, i) => {
     // brainL0.1 = a brain with fixed λ0 = 0.1
     if (kind.startsWith("brainL")) return brainBot(kind + i, { ...extraB, lam0: Number(kind.slice(6)) }, seed0 * 3000 + i);
     if (kind.startsWith("shark") && kind.length > 5) return sharkModel(d, r, Number(kind.slice(5)) / 10);
     switch (kind) {
+      case "ally": return allyBot(`ally${i}`, extra, seed0 * 1000 + i, allies, team);
       case "brain": return brainBot(`brain${i}`, extra, seed0 * 1000 + i);
       case "brainB": return brainBot(`brainB${i}`, extraB, seed0 * 2000 + i);
       case "shark": return sharkModel(d, r, 1);

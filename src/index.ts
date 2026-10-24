@@ -12,6 +12,14 @@
 // Updates:    LIVE_AUTOPULL=1 pulls origin/scrabblebot after each match; if
 //             code changed the process exits 75 so the wrapper restarts it.
 //
+// Team play: ALLIES=name1,name2 (allied bots' names; may include our own)
+//             makes allies join the casual lobby together.
+//             TEAM_RELAY=https://ntfy.sh/<secret topic> (same for all allies)
+//             shares starting tiles (src/relay.ts), so allies in a match
+//             don't bid against each other (src/team.ts).
+//             TEAM_CAPTAIN=<name>: allies play support for that bot.
+//             With no ally in a match, play is unchanged.
+//
 // Exit codes: 1 = bad token (don't restart), 75 = restart me.
 
 import { DbConnection, type ErrorContext } from "./module_bindings/index.js";
@@ -21,6 +29,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { Brain, DEFAULT_PARAMS, countsOf, emptyCounts, unseenPool, type Counts, type Params } from "./engine.js";
+import { BAG } from "./dict.js";
+import { Relay } from "./relay.js";
+import { DEFAULT_TEAM, teamBid, type Mate, type TeamConfig } from "./team.js";
 
 const HOST = process.env.STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = process.env.STDB_DB ?? "scrabblebot";
@@ -36,6 +47,14 @@ const AUTOPULL = process.env.LIVE_AUTOPULL === "1";
 const PULL_BRANCH = process.env.PULL_BRANCH ?? "scrabblebot";
 const TOKEN_PATH = path.join(process.cwd(), `.token-${BOT_NAME}`);
 const RUNS_DIR = path.join(process.cwd(), "runs");
+const ALLY_NAMES = new Set((process.env.ALLIES ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+// Free while an ally is mid-match: wait this long for it before joining
+// the lobby alone (a match runs ~75 s).
+const ALLY_WAIT_MS = Number(process.env.ALLY_WAIT_MS ?? 90_000);
+const START_BALANCE = 100;
+const TEAM_RELAY = process.env.TEAM_RELAY;
+const TEAM_CAPTAIN = process.env.TEAM_CAPTAIN?.trim().toLowerCase();
+const TEAM_CFG: Partial<TeamConfig> = process.env.TEAM ? JSON.parse(process.env.TEAM) : {};
 
 // Bid timing. A bid must reach the server before the auction closes. Our
 // clock and the server's differ by tens of ms, so the deadline is counted
@@ -73,6 +92,10 @@ const finalDone = new Set<string>();
 const lastRack = new Map<string, string>();
 const playsQueued = new Set<string>();
 const loggedEnd = new Set<string>();
+const allyIds = new Set<bigint>();
+let freeSince = Date.now();
+let relay: Relay | null = null;
+const subApplied = new Set<string>(); // matches whose rows we hold
 
 const warn = (what: string) => (e: unknown) =>
   console.warn(`[${BOT_NAME}] ${what} failed: ${e instanceof Error ? e.message : e}`);
@@ -183,6 +206,8 @@ function subscribeMatch(conn: DbConnection, matchId: bigint) {
   const h = conn
     .subscriptionBuilder()
     .onApplied(() => {
+      subApplied.add(k);
+      announceStart(conn, matchId);
       for (const a of conn.db.auction.iter())
         if (a.matchId === matchId && a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter, a.opensAt, a.closesAt);
       queuePlays(conn, matchId);
@@ -237,12 +262,24 @@ function tryBid(
   } finally {
     brain.p.samples = full;
   }
+  let team: Record<string, unknown> | undefined;
+  const mates = relay && allyIds.size ? matesFor(conn, matchId, opensAt.toMillis()) : undefined;
+  if (mates) {
+    if (mates.mates.length >= 2) {
+      const solo = amount;
+      const li = letter.charCodeAt(0) - 65;
+      const cfg = { ...DEFAULT_TEAM, ...TEAM_CFG, captain: captainId() };
+      const r = teamBid(brain.d, Number(myBotId), amount, brain.lambda(balance, m.bagTotal), li, mates.mates, mates.pool, m.bagTotal, Number(auctionId), cfg, brain.price[li], balance);
+      amount = r.bid;
+      if (r.decision) team = { solo, bidder: r.decision.bidder, sitOut: r.decision.sitOut, shared: r.decision.shared.map((x) => +x.toFixed(1)) };
+    }
+  }
   const ms = Date.now() - t0;
   const left = close - Date.now();
   console.log(
-    `[${BOT_NAME}] m${matchId} bag${m.bagTotal} '${letter}' bid ${amount} (bal ${balance}, ${ms}ms, lag ${lag}ms, ~${Math.round(left)}ms left${samples < full ? `, ${samples} samples` : ""})`,
+    `[${BOT_NAME}] m${matchId} bag${m.bagTotal} '${letter}' bid ${amount} (bal ${balance}, ${ms}ms, lag ${lag}ms, ~${Math.round(left)}ms left${samples < full ? `, ${samples} samples` : ""}${team ? `, team: ${team.sitOut ? `ally ${team.bidder} bids` : "we bid"}` : ""})`,
   );
-  const ev = { type: "bid", match: matchId, auction: auctionId, letter, bag: m.bagTotal, balance, amount, ms, lag, left, samples };
+  const ev = { type: "bid", match: matchId, auction: auctionId, letter, bag: m.bagTotal, balance, amount, ms, lag, left, samples, team };
   const sent = Date.now();
   if (DRY_RUN) log({ ...ev, dry: true });
   else if (amount > 0)
@@ -258,6 +295,113 @@ function tryBid(
         log({ ...ev, error: e instanceof Error ? e.message : String(e) });
       });
   else log(ev);
+}
+
+function captainId(): number | undefined {
+  if (!TEAM_CAPTAIN || !liveConn) return undefined;
+  for (const b of liveConn.db.bot.iter()) if (b.name.toLowerCase() === TEAM_CAPTAIN) return Number(b.id);
+  return undefined;
+}
+
+// Us and our allies in this match, as every ally sees them when the
+// auction opened: starting tiles (from the relay) + tiles won - tiles
+// played, balance rebuilt from the results and the plays made before then
+// (so a play racing the auction can't make allies disagree). Also the pool
+// shared by all of them. No mates until every ally in the match holds
+// everyone's starting tiles.
+function matesFor(conn: DbConnection, matchId: bigint, opensAt: bigint): { mates: Mate[]; pool: Counts } {
+  const known = new Map<bigint, { won: Counts; played: Counts; balance: number }>();
+  const side = (id: bigint) => {
+    let x = known.get(id);
+    if (!x) known.set(id, (x = { won: emptyCounts(), played: emptyCounts(), balance: START_BALANCE }));
+    return x;
+  };
+  for (const p of conn.db.matchParticipant.iter()) if (p.matchId === matchId) side(p.botId);
+  for (const r of conn.db.auctionResult.iter()) {
+    if (r.matchId !== matchId || r.winnerBotId == null || r.closedAt.toMillis() > opensAt) continue;
+    const x = side(r.winnerBotId);
+    x.won[r.letter.charCodeAt(0) - 65]++;
+    x.balance -= Number(r.paid);
+  }
+  for (const w of conn.db.wordPlay.iter()) {
+    if (w.matchId !== matchId || w.playedAt.toMillis() >= opensAt) continue;
+    const x = side(w.botId);
+    const c = countsOf(w.word);
+    for (let i = 0; i < 26; i++) x.played[i] += c[i]!;
+    x.balance += Number(w.totalReward);
+  }
+  const team = [...known.keys()].filter((id) => id === myBotId || allyIds.has(id));
+  const starts = team.length >= 2 ? relay?.ready(String(matchId), team.map(String)) : undefined;
+  if (!starts) return { mates: [], pool: emptyCounts() };
+  // Hidden tiles out of the bag: allies' starting racks, plus whatever
+  // the other bots' plays have exposed.
+  const gone = emptyCounts();
+  const mates: Mate[] = [];
+  for (const [id, x] of known) {
+    const s = team.includes(id) ? countsOf(starts.get(String(id))!) : undefined;
+    const k = emptyCounts();
+    for (let i = 0; i < 26; i++) {
+      if (s) {
+        k[i] = Math.max(0, s[i]! + x.won[i]! - x.played[i]!);
+        gone[i] += s[i]!;
+      } else gone[i] += Math.max(0, x.played[i]! - x.won[i]!);
+    }
+    if (s) mates.push({ id: Number(id), known: k, balance: x.balance });
+  }
+  // Minus letters revealed before this auction plus this one.
+  for (const a of conn.db.auction.iter())
+    if (a.matchId === matchId && a.opensAt.toMillis() <= opensAt) gone[a.letter.charCodeAt(0) - 65]++;
+  const pool = emptyCounts();
+  for (let i = 0; i < 26; i++) pool[i] = Math.max(0, BAG[i]! - gone[i]!);
+  return { mates, pool };
+}
+
+// Tell allies our starting tiles for this match.
+function announceStart(conn: DbConnection, matchId: bigint) {
+  // Our starting rack is rebuilt from the match's results and plays.
+  if (!relay || !subApplied.has(String(matchId))) return;
+  const s = startRackFor(conn, matchId);
+  let tiles = "";
+  for (let i = 0; i < 26; i++) tiles += String.fromCharCode(65 + i).repeat(s[i]!);
+  if (tiles) relay.start(String(matchId), tiles);
+}
+
+// Ally names -> bot ids. Returns the newly found ids. An ally that
+// registers after we start is picked up by bot.onInsert.
+function resolveAllies(conn: DbConnection): bigint[] {
+  if (!ALLY_NAMES.size || myBotId === null) return [];
+  const found: bigint[] = [];
+  for (const b of conn.db.bot.iter())
+    if (b.id !== myBotId && !allyIds.has(b.id) && ALLY_NAMES.has(b.name.toLowerCase())) {
+      allyIds.add(b.id);
+      found.push(b.id);
+    }
+  if (found.length) {
+    console.log(`[${BOT_NAME}] allies: ${[...allyIds].map((id) => `${conn.db.bot.id.find(id)?.name} (${id})`).join(", ")}`);
+    log({ type: "allies", ids: [...allyIds] });
+  }
+  return found;
+}
+
+// Where an ally is: its lobby seat and match rows.
+function watchBots(conn: DbConnection, ids: bigint[]) {
+  if (!ids.length) return;
+  conn.subscriptionBuilder().subscribe([
+    ...ids.map((id) => `SELECT * FROM match_participant WHERE bot_id = ${id}`),
+    ...ids.map((id) => `SELECT * FROM lobby_member WHERE bot_id = ${id}`),
+  ]);
+}
+
+// Wait for allies before joining alone? Join at once when an ally already
+// waits in the open lobby; wait (up to ALLY_WAIT_MS) while one is mid-match.
+function waitForAllies(conn: DbConnection): boolean {
+  if (!allyIds.size || TOURNAMENT_ID) return false;
+  for (const x of conn.db.lobbyMember.iter())
+    if (allyIds.has(x.botId) && conn.db.lobby.id.find(x.lobbyId)?.status.tag === "Open") return false;
+  if (Date.now() - freeSince > ALLY_WAIT_MS) return false;
+  for (const p of conn.db.matchParticipant.iter())
+    if (allyIds.has(p.botId) && conn.db.matchState.id.find(p.matchId)?.status.tag === "Running") return true;
+  return false;
 }
 
 // Plays wait until this batch of updates is handled, so a new auction in
@@ -312,6 +456,7 @@ function inOpenLobby(conn: DbConnection): boolean {
 
 function joinLobby(conn: DbConnection) {
   if (myBotId === null || runningMatches(conn).length || inOpenLobby(conn)) return;
+  if (waitForAllies(conn)) return;
   lastJoinAt = Date.now();
   if (DRY_RUN) return;
   console.log(`[${BOT_NAME}] joining lobby`);
@@ -353,6 +498,8 @@ function onMatchEnded(conn: DbConnection, matchId: bigint) {
   if (loggedEnd.has(k)) return;
   loggedEnd.add(k);
   brains.delete(k);
+  relay?.forget(k);
+  freeSince = Date.now();
   const ps = Array.from(conn.db.matchParticipant.iter())
     .filter((x) => x.matchId === matchId)
     .sort((a, b) => Number(b.score - a.score));
@@ -421,6 +568,9 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
         process.exit(1);
       }
       console.log(`[${BOT_NAME}] acting as '${conn.db.bot.id.find(myBotId)?.name}' (id ${myBotId})`);
+      resolveAllies(conn);
+      watchBots(conn, [...allyIds]);
+      if (TEAM_RELAY && !DRY_RUN) relay = new Relay(TEAM_RELAY, String(myBotId), (s) => console.warn(`[${BOT_NAME}] ${s}`));
       conn
         .subscriptionBuilder()
         .onApplied(() => bootstrap(conn))
@@ -442,7 +592,7 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
     if (a.status.tag === "Open") tryBid(conn, a.id, a.matchId, a.letter, a.opensAt, a.closesAt);
   });
   conn.db.auction.onUpdate(touch);
-  conn.db.myRack.onInsert((_c, h) => (touch(), queuePlays(conn, h.matchId)));
+  conn.db.myRack.onInsert((_c, h) => (touch(), setTimeout(() => announceStart(conn, h.matchId), 0), queuePlays(conn, h.matchId)));
   conn.db.myRack.onUpdate((_c, _o, h) => (touch(), queuePlays(conn, h.matchId)));
   conn.db.tournament.onInsert(() => registerTournaments(conn));
   conn.db.tournament.onUpdate(() => registerTournaments(conn));
@@ -459,6 +609,13 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   });
   conn.db.matchState.onUpdate((_c, old, neu) => {
     if (old.status.tag !== "Ended" && neu.status.tag === "Ended" && matchSubs.has(String(neu.id))) onMatchEnded(conn, neu.id);
+    // An ally just came free: maybe join the lobby with it.
+    else if (old.status.tag === "Running" && neu.status.tag !== "Running" && allyIds.size) setTimeout(() => joinLobby(conn), 300);
+  });
+  conn.db.bot.onInsert(() => watchBots(conn, resolveAllies(conn)));
+  conn.db.bot.onUpdate(() => watchBots(conn, resolveAllies(conn)));
+  conn.db.lobbyMember.onInsert((_c, x) => {
+    if (allyIds.has(x.botId)) joinLobby(conn);
   });
 }
 
