@@ -114,7 +114,7 @@ export const DEFAULT_PARAMS: Params = {
   lamMarket: 0,
   denyW: 0,
   endgameN: 12,
-  bidMult: 1,
+  bidMult: 1.4,
   bidFloor: 0,
   floorMinV: 1,
 };
