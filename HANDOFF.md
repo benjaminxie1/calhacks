@@ -143,6 +143,32 @@ below is 64–96 paired matches in `src/bench.ts` unless it says otherwise.
   (99–108). If tournament tables are smaller than 6, this is the gap to look at. One
   lead: `totalAuctions` is fixed at 68, but a 4-player match has 77 auctions.
 
+## What polarbear's live matches show (Oct 24, 36 matches)
+
+Polarbear runs this brain live. In the 25 matches it lost, compared with each match's winner
+(from `auction_result`, `auction_top_bid_archive` and `word_play`):
+
+| per match | polarbear | winner |
+|---|---|---|
+| tiles bought | 7.4 | 15.2 |
+| tiles in the first third of the bag | 1.3 | 4.3 |
+| vowels and 1-2 point consonants | 5.1 at ~12 | 11.7 at ~10 |
+| J/Q/X/Z | 0.7 at 40 (bid 55) | 0.4 at 21 (bid 38) |
+| words | 1.7 × 6.3 letters | 3.4 × 5.7 letters |
+| coins left at the end | 42 | 24 |
+
+So the brain under-buys cheap common letters early, overpays for J/Q/X/Z, waits for long
+words and ends with unspent coins. The sim doesn't show this yet: against the fitted
+field the brain ranks ~1.4-1.9, while live it ranks ~3.2. The field seats only cash in 8+
+letter words, so they score too little. A crude "top bot" seat (field bidding with 5-6
+letter cash-ins) scored only 42-46, so the strong live bots need a better model.
+
+`rareCap` caps the bid on J/Q/X/Z at a multiple of their market price. At 1.3 it scored
+94.8 / rank 1.78 against 93.8 / 1.88 without it (`brain,brainB,fit,fit,fit,fit`, 64 paired
+matches, brainB = params.json), and it is in params.json now. Buying common letters
+earlier through `availProb` 0.15 scored worse in the sim (88.4 / 2.16), which conflicts
+with the live data. That one needs a live A/B, not the sim.
+
 ## Next steps, in order
 
 1. **Fix the known valuation flaw.** The trace shows the bot bidding 1–9 on common letters
