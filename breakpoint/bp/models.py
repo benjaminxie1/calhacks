@@ -195,13 +195,16 @@ class Action(Model):
 class Proposal(Model):
     proposal_id: str
     case_id: str
+    action_name: str  # the library action this proposal carries out
     action: Action
     postings: list[Posting] = Field(default_factory=list)
     transfer: dict | None = None
     amount_usd: Decimal
     calculator: str  # the deterministic calculator that produced every number (R11)
     calc_inputs: dict
-    references: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)  # original entries this corrects
+    source_ref: str  # the order / transfer / corporate action the fix belongs to
+    playbook: dict | None = None  # {"id", "version", "branch"} or None for a taught one-off fix
     memo: str
     prepared_by: str
 
