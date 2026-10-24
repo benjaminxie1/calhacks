@@ -36,8 +36,8 @@ Steps:
    `DEFAULT_PARAMS`, so new strategy knobs are picked up automatically once they
    are listed there. Each sim lineup is us, three rival seats running the current `params.json`
    at 24 samples, and two field seats. The rivals stand in for the top live bots, which out-score the field model.
-   With this mix, sim score and rank land near benx's live numbers. Set `FLYWHEEL_RIVALS` (0-5) to change it. Stage 1 runs 24 matches per candidate. Stage 2 runs the current
-   params plus the top two on fresh paired seeds, 60 to 200 of them, sized from stage 1's pace so the
+   With this mix, sim score and rank land near benx's live numbers. Set `FLYWHEEL_RIVALS` (0-5) to change it. Stage 1 runs a 6-match probe per candidate to time the engine, then tops up to at most 24 within ~40% of the budget. Stage 2 runs the current
+   params plus the top two on fresh paired seeds, 20 to 200 of them, sized from stage 1's pace so the
    run fits `FLYWHEEL_BUDGET_MIN` (default 25). Fewer seeds widen the error bars, so the 2 SE gate gets stricter on its own.
 5. If a candidate wins, `run.ts` writes `params.json` and `flywheel/state.json`, which holds the fitted field,
    the observed market and the accepted gain. The scheduled job commits both and pushes them to

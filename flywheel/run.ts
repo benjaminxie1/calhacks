@@ -101,17 +101,32 @@ async function main() {
   // sized from stage 1's measured pace to finish inside the time budget
   // (default 25 min, so runs 30 min apart don't pile up).
   const budgetMs = Number(process.env.FLYWHEEL_BUDGET_MIN ?? 25) * 60_000;
-  const n1 = QUICK ? 8 : 24;
-  log(`stage 1: ${cands.length} candidates x ${n1} matches`);
+  // Stage 1 starts with a short probe to measure the engine's pace, then
+  // tops up to at most 24 matches per candidate within ~40% of the budget.
+  const n1a = QUICK ? 8 : 6;
+  log(`stage 1: ${cands.length} candidates x ${n1a} matches (probe)`);
   const tS1 = Date.now();
-  const s1 = await evaluate(cands, field, seedsFrom(r() * 1e9, n1), rival, rivals);
-  const msPerMatch = (Date.now() - tS1) / (cands.length * n1);
+  const s1 = await evaluate(cands, field, seedsFrom(r() * 1e9, n1a), rival, rivals);
+  const msPerMatch = (Date.now() - tS1) / (cands.length * n1a);
+  const s1Ms = 0.4 * (budgetMs - (tS1 - t0));
+  const n1b = QUICK ? 0 : Math.max(0, Math.min(24, Math.floor(s1Ms / (cands.length * msPerMatch))) - n1a);
+  if (n1b > 0) {
+    log(`stage 1: +${n1b} matches each (${(msPerMatch / 1000).toFixed(1)}s per match)`);
+    const more = await evaluate(cands, field, seedsFrom(r() * 1e9, n1b), rival, rivals);
+    more.forEach((m, i) => {
+      const s = s1[i]!;
+      s.ranks.push(...m.ranks);
+      s.scores.push(...m.scores);
+      s.meanRank = s.ranks.reduce((a, b) => a + b, 0) / s.ranks.length;
+      s.meanScore = s.scores.reduce((a, b) => a + b, 0) / s.scores.length;
+    });
+  }
   cands.forEach((c, i) => log(`  [${i}] ${fmt(s1[i]!)}  ${i === 0 ? "(current params.json) " : ""}${knobs(c)}`));
 
   // Stage 2: the incumbent and the two best challengers on fresh seeds.
   const order = s1.map((s, i) => ({ i, s })).filter((x) => x.i > 0).sort((a, b) => a.s.meanRank - b.s.meanRank || b.s.meanScore - a.s.meanScore);
   const finalists = [0, ...order.slice(0, 2).map((x) => x.i)];
-  const n2 = QUICK ? 12 : Math.max(60, Math.min(200, Math.floor((budgetMs - (Date.now() - t0)) / (3 * msPerMatch))));
+  const n2 = QUICK ? 12 : Math.max(20, Math.min(200, Math.floor((budgetMs - 60_000 - (Date.now() - t0)) / (3 * msPerMatch))));
   log(`stage 2: candidates ${finalists.join(",")} x ${n2} matches`);
   const s2 = await evaluate(finalists.map((i) => cands[i]!), field, seedsFrom(r() * 1e9, n2), rival, rivals);
   let bestK = 0;
