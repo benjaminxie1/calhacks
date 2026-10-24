@@ -94,6 +94,13 @@ export interface Params {
   // bidFloor × its market price. 0 = off.
   bidFloor: number;
   floorMinV: number;
+  // Common letters (face value <= cheapMaxFace) worth floorMinV+ points
+  // get a bid of at least cheapFloor × pre-match price (seedPrice, not the
+  // in-match price, which our own lost bids would ratchet up). Live winners bid
+  // ~1.2× the clearing price on E/R/S/T/..., so bidFloor 0.9 loses them
+  // by ~2 coins; this raises the floor on those letters only. 0 = off.
+  cheapFloor: number;
+  cheapMaxFace: number;
   // Before the last stretch of the bag, cap bids on letters of face value
   // >= rareMinFace at rareCap × market price (live: benx spends its early
   // budget on J/Q/X/Z while top bots buy them late). 0 = off.
@@ -149,6 +156,8 @@ export const DEFAULT_PARAMS: Params = {
   bidMult: 1,
   bidFloor: 0.9,
   floorMinV: 1,
+  cheapFloor: 0,
+  cheapMaxFace: 2,
   rareCap: 0,
   rareMinFace: 8,
   rareUntil: 0.33,
@@ -648,6 +657,8 @@ export class Brain {
     let bid = (v / lam) * (inp.firstPrice ? 1 : this.p.bidMult);
     if (!inp.firstPrice && this.p.bidFloor > 0 && v >= this.p.floorMinV && inp.bagLeft > 0)
       bid = Math.max(bid, this.p.bidFloor * this.price[inp.letter]!);
+    if (!inp.firstPrice && this.p.cheapFloor > 0 && v >= this.p.floorMinV && inp.bagLeft > 0 && LETTER_VALUE[inp.letter]! <= this.p.cheapMaxFace)
+      bid = Math.max(bid, this.p.cheapFloor * this.seedPrice[inp.letter]!);
     if (inp.firstPrice) {
       // Pay-your-bid: shade towards what the runner-up is likely to bid,
       // but never above value.

@@ -46,6 +46,8 @@ const SHARED_PARAMS: Params = {
   bidMult: 1,
   bidFloor: 0,
   floorMinV: 1,
+  cheapFloor: 0,
+  cheapMaxFace: 2,
   rareCap: 0,
   rareMinFace: 8,
   rareUntil: 0.33,
