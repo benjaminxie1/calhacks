@@ -48,6 +48,7 @@ const SHARED_PARAMS: Params = {
   floorMinV: 1,
   cheapFloor: 0,
   cheapMaxFace: 2,
+  cheapMinV: 1,
   rareCap: 0,
   rareMinFace: 8,
   rareUntil: 0.33,
