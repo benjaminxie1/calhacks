@@ -6,7 +6,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "sim": "tsx src/run-sim.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "flywheel": "tsx flywheel/run.ts"
   },
   "dependencies": {
     "spacetimedb": "^2.12.0",
