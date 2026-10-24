@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "breakpoint"
+version = "0.1.0"
+description = "Breakpoint: an autonomous reconciliation team for a retail brokerage"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "pydantic>=2.7",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+  "pyyaml>=6",
+  "anthropic>=0.70",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["bp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["llm: needs a live model (runs 3x, must pass 3/3)"]
