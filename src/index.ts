@@ -448,6 +448,17 @@ function playWords(conn: DbConnection, matchId: bigint, final: boolean) {
   }
 }
 
+// In a match that is starting or running: the server refuses joinLobby
+// then, so don't send it. (runningMatches misses the Lobby phase.)
+function inMatch(conn: DbConnection): boolean {
+  for (const p of conn.db.matchParticipant.iter()) {
+    if (p.botId !== myBotId) continue;
+    const st = conn.db.matchState.id.find(p.matchId)?.status.tag;
+    if (st === "Lobby" || st === "Running") return true;
+  }
+  return false;
+}
+
 function inOpenLobby(conn: DbConnection): boolean {
   for (const x of conn.db.lobbyMember.iter()) {
     if (x.botId !== myBotId) continue;
@@ -457,7 +468,7 @@ function inOpenLobby(conn: DbConnection): boolean {
 }
 
 function joinLobby(conn: DbConnection) {
-  if (myBotId === null || runningMatches(conn).length || inOpenLobby(conn)) return;
+  if (myBotId === null || inMatch(conn) || inOpenLobby(conn)) return;
   if (waitForAllies(conn)) return;
   lastJoinAt = Date.now();
   if (DRY_RUN) return;
