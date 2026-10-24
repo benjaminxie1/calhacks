@@ -32,7 +32,9 @@ export const STAGE_PARAMS: Record<Stage, Partial<Params>> = {
   // 2-6% wins). A floor bid at the pre-match price on every letter: 60-69%.
   // Level (96 matches each, wins at 0.85/1/1.15): Doppio 42/57/74%,
   // Karthik 40/54/58%, field 74/83/83%, live 99/98/96%; 1.3 was worse.
-  final: { seedFloor: 1.1 },
+  // denyW 0: heads-up vs live seats, 160 matches, denial 0/0.078/0.3 won
+  // 67/62/46% (strategy thread).
+  final: { seedFloor: 1.1, denyW: 0 },
 };
 
 // Table-size rules, under the stage's own params: the fewer the bots, the
