@@ -39,7 +39,7 @@ export const STAGE_PARAMS: Record<Stage, Partial<Params>> = {
 // more letters go cheap to whoever bids (3 bots, sim: last place 17% with
 // no floor, 13% at 0.7, 9% at 1.0).
 function sizeParams(stage: Stage, players: number): Partial<Params> {
-  if (stage !== "casual" && players > 0 && players <= 3) return { seedFloor: 1 };
+  if ((stage === "swiss" || stage === "bracket") && players > 0 && players <= 3) return { seedFloor: 1 };
   return {};
 }
 
