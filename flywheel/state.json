@@ -1,337 +1,421 @@
 {
-  "updatedAt": "2026-10-24T08:42:24.495Z",
+  "updatedAt": "2026-10-24T19:50:39.434Z",
   "observed": {
     "matches": 150,
-    "since": "2026-10-24T07:24:39.176Z",
+    "since": "2026-10-24T18:48:07.029Z",
     "paidByLetter": [
-      10.8,
-      16.2,
-      17.7,
-      13.7,
-      11.3,
-      18.7,
-      12.4,
-      20,
+      10.4,
+      15.6,
+      16.3,
+      13.6,
       10.6,
-      25,
-      21,
-      11.1,
-      16.4,
-      10.8,
-      10.1,
-      16,
-      25.4,
-      11.3,
-      13,
-      10.2,
-      10.2,
-      16.7,
-      17,
-      27.8,
-      19.6,
-      33.4
+      17.9,
+      12,
+      19.4,
+      9.7,
+      24.2,
+      20.3,
+      10.5,
+      16.2,
+      10.3,
+      9.5,
+      16.5,
+      22.9,
+      10.9,
+      12,
+      10,
+      9.2,
+      16.3,
+      16.6,
+      25.7,
+      19.3,
+      30.9
     ],
     "topByLetter": [
-      15.1,
-      21.5,
-      23.9,
-      18.6,
-      16,
-      25.1,
-      18.2,
-      27,
-      14.8,
-      32.6,
-      27.8,
-      15.9,
-      21.4,
-      15.5,
-      14.4,
+      14.2,
+      20.2,
       21.1,
-      36.9,
-      16.2,
-      18,
-      14.7,
-      15.4,
-      22,
-      22.4,
-      35.3,
-      25.9,
-      43.6
+      17.7,
+      14.6,
+      23.6,
+      16.1,
+      24.6,
+      13.6,
+      31.9,
+      26.9,
+      14.5,
+      21.1,
+      14.3,
+      13.2,
+      20.8,
+      32.5,
+      14.8,
+      16,
+      13.9,
+      14.3,
+      21.3,
+      21.7,
+      33.4,
+      24.9,
+      39.9
     ],
     "paidByStage": [
-      13.7,
-      13,
-      12.5
+      13.5,
+      12.5,
+      11.4
     ],
-    "noSaleLate": 0.019,
-    "meanScore": 72.8,
-    "winScore": 102.5,
+    "noSaleLate": 0.018000000000000002,
+    "meanScore": 72.2,
+    "winScore": 117.2,
     "bots": [
       {
-        "name": "LetterShark",
-        "n": 1,
-        "score": 123,
-        "rank": 1
-      },
-      {
-        "name": "Vickey",
-        "n": 9,
-        "score": 96,
-        "rank": 1.67
-      },
-      {
         "name": "Nijello",
-        "n": 6,
-        "score": 104.2,
-        "rank": 1.67
-      },
-      {
-        "name": "Chinese Dante",
-        "n": 37,
-        "score": 94.1,
-        "rank": 2.08
-      },
-      {
-        "name": "cashu",
-        "n": 40,
-        "score": 87.5,
-        "rank": 2.25
-      },
-      {
-        "name": "benx",
-        "n": 25,
-        "score": 86.5,
-        "rank": 2.32
-      },
-      {
-        "name": "LUCENT",
-        "n": 43,
-        "score": 84.8,
-        "rank": 2.63
-      },
-      {
-        "name": "marcellinus",
-        "n": 44,
-        "score": 81.1,
-        "rank": 2.77
-      },
-      {
-        "name": "keanu_reeves",
-        "n": 39,
-        "score": 79.5,
-        "rank": 2.9
+        "n": 22,
+        "score": 117,
+        "rank": 1.64
       },
       {
         "name": "postturing",
-        "n": 41,
-        "score": 80.4,
-        "rank": 2.9
-      },
-      {
-        "name": "podzemski",
-        "n": 41,
-        "score": 80.3,
-        "rank": 3.15
-      },
-      {
-        "name": "Orpheus",
-        "n": 42,
-        "score": 79.6,
-        "rank": 3.17
-      },
-      {
-        "name": "scrabbler",
-        "n": 43,
-        "score": 76.6,
-        "rank": 3.26
-      },
-      {
-        "name": "slow-n-dumb",
-        "n": 31,
-        "score": 74.1,
-        "rank": 3.29
-      },
-      {
-        "name": "sardine",
-        "n": 18,
-        "score": 77.6,
-        "rank": 3.39
-      },
-      {
-        "name": "MagnusBot",
         "n": 21,
-        "score": 73.3,
-        "rank": 3.43
+        "score": 107.6,
+        "rank": 1.67
       },
       {
-        "name": "TileShark",
-        "n": 2,
-        "score": 69.5,
-        "rank": 3.5
+        "name": "Doppio",
+        "n": 22,
+        "score": 102,
+        "rank": 1.91
       },
       {
-        "name": "code",
-        "n": 36,
-        "score": 69.6,
-        "rank": 3.53
+        "name": "Lambi Lambiii",
+        "n": 17,
+        "score": 98.7,
+        "rank": 2
       },
       {
-        "name": "Heidi",
-        "n": 40,
-        "score": 69.6,
-        "rank": 3.58
+        "name": "Chinese Dante",
+        "n": 20,
+        "score": 92.7,
+        "rank": 2.2
       },
       {
-        "name": "coconut",
-        "n": 13,
-        "score": 71.6,
-        "rank": 3.69
+        "name": "triplo",
+        "n": 24,
+        "score": 96.5,
+        "rank": 2.38
+      },
+      {
+        "name": "ramsay",
+        "n": 18,
+        "score": 87.4,
+        "rank": 2.44
+      },
+      {
+        "name": "wordchoice",
+        "n": 23,
+        "score": 89.3,
+        "rank": 2.48
+      },
+      {
+        "name": "bro",
+        "n": 16,
+        "score": 83.6,
+        "rank": 2.5
+      },
+      {
+        "name": "Ambees",
+        "n": 22,
+        "score": 91.7,
+        "rank": 2.55
+      },
+      {
+        "name": "Lala",
+        "n": 15,
+        "score": 84.8,
+        "rank": 2.73
+      },
+      {
+        "name": "varr2.0",
+        "n": 22,
+        "score": 86.1,
+        "rank": 2.77
+      },
+      {
+        "name": "LUCENT",
+        "n": 22,
+        "score": 82.5,
+        "rank": 2.82
       },
       {
         "name": "swanbot",
         "n": 22,
-        "score": 67.5,
-        "rank": 3.77
+        "score": 82.9,
+        "rank": 2.86
       },
       {
-        "name": "Megabot",
-        "n": 28,
-        "score": 68.1,
-        "rank": 3.82
+        "name": "BlackSwan",
+        "n": 21,
+        "score": 86.8,
+        "rank": 2.86
       },
       {
-        "name": "bot",
-        "n": 36,
-        "score": 70.6,
-        "rank": 3.83
+        "name": "sardine",
+        "n": 21,
+        "score": 81.6,
+        "rank": 2.95
+      },
+      {
+        "name": "testbot",
+        "n": 19,
+        "score": 87.5,
+        "rank": 2.95
+      },
+      {
+        "name": "Cashu",
+        "n": 20,
+        "score": 84.8,
+        "rank": 3.05
+      },
+      {
+        "name": "Metheny",
+        "n": 17,
+        "score": 73.7,
+        "rank": 3.12
       },
       {
         "name": "SookraBot",
-        "n": 40,
-        "score": 71.8,
-        "rank": 3.83
-      },
-      {
-        "name": "guesser",
-        "n": 27,
-        "score": 65.6,
-        "rank": 4.07
-      },
-      {
-        "name": "Fable",
-        "n": 25,
-        "score": 62.2,
-        "rank": 4.2
-      },
-      {
-        "name": "jawn",
-        "n": 2,
-        "score": 45,
-        "rank": 4.5
-      },
-      {
-        "name": "ramsay",
-        "n": 22,
-        "score": 52.8,
-        "rank": 4.5
-      },
-      {
-        "name": "scrappybot",
-        "n": 41,
-        "score": 58.2,
-        "rank": 4.56
-      },
-      {
-        "name": "SkyScrabble",
-        "n": 32,
-        "score": 56.3,
-        "rank": 4.72
-      },
-      {
-        "name": "ChoiCube84",
-        "n": 1,
-        "score": 66,
-        "rank": 5
-      },
-      {
-        "name": "atlas",
-        "n": 6,
-        "score": 59.2,
-        "rank": 5.5
-      },
-      {
-        "name": "adi",
-        "n": 41,
-        "score": 38.8,
-        "rank": 5.73
-      },
-      {
-        "name": "0x3f",
-        "n": 2,
-        "score": 5,
-        "rank": 6
-      },
-      {
-        "name": "polarbear",
-        "n": 2,
-        "score": 0,
-        "rank": 6
+        "n": 8,
+        "score": 62.5,
+        "rank": 3.13
       },
       {
         "name": "YeziShanYang",
-        "n": 1,
+        "n": 23,
+        "score": 84.7,
+        "rank": 3.17
+      },
+      {
+        "name": "LetterSharkPro",
+        "n": 23,
+        "score": 83.7,
+        "rank": 3.17
+      },
+      {
+        "name": "podzemski",
+        "n": 21,
+        "score": 82.7,
+        "rank": 3.19
+      },
+      {
+        "name": "slow-n-dumb",
+        "n": 23,
+        "score": 80.6,
+        "rank": 3.3
+      },
+      {
+        "name": "scrappybot",
+        "n": 23,
+        "score": 81.2,
+        "rank": 3.35
+      },
+      {
+        "name": "maverick-bot",
+        "n": 19,
+        "score": 63.7,
+        "rank": 3.47
+      },
+      {
+        "name": "keanu_reeves",
+        "n": 22,
+        "score": 70.2,
+        "rank": 3.55
+      },
+      {
+        "name": "mexicanpepper",
+        "n": 20,
+        "score": 77.5,
+        "rank": 3.6
+      },
+      {
+        "name": "scrabbler",
+        "n": 21,
+        "score": 77.8,
+        "rank": 3.62
+      },
+      {
+        "name": "James_Bond_007",
+        "n": 23,
+        "score": 78.2,
+        "rank": 3.65
+      },
+      {
+        "name": "varr-bot",
+        "n": 22,
+        "score": 62.7,
+        "rank": 4
+      },
+      {
+        "name": "Fable",
+        "n": 12,
+        "score": 65.9,
+        "rank": 4
+      },
+      {
+        "name": "Menice",
+        "n": 12,
+        "score": 64.3,
+        "rank": 4
+      },
+      {
+        "name": "Srinivas",
+        "n": 22,
+        "score": 64.1,
+        "rank": 4.18
+      },
+      {
+        "name": "Ally",
+        "n": 11,
+        "score": 48,
+        "rank": 4.27
+      },
+      {
+        "name": "prestoshi",
+        "n": 15,
+        "score": 51.9,
+        "rank": 4.4
+      },
+      {
+        "name": "bee",
+        "n": 23,
+        "score": 60,
+        "rank": 4.48
+      },
+      {
+        "name": "Dwight",
+        "n": 13,
+        "score": 56.2,
+        "rank": 4.54
+      },
+      {
+        "name": "Lionel",
+        "n": 3,
+        "score": 51,
+        "rank": 4.67
+      },
+      {
+        "name": "Morei",
+        "n": 19,
+        "score": 52.5,
+        "rank": 4.68
+      },
+      {
+        "name": "hinsonloo",
+        "n": 22,
+        "score": 49.1,
+        "rank": 4.73
+      },
+      {
+        "name": "havrais",
+        "n": 12,
+        "score": 62.3,
+        "rank": 4.75
+      },
+      {
+        "name": "William Chenyin",
+        "n": 18,
+        "score": 17.4,
+        "rank": 5.17
+      },
+      {
+        "name": "tatum",
+        "n": 22,
+        "score": 20,
+        "rank": 5.27
+      },
+      {
+        "name": "swrj",
+        "n": 3,
         "score": 0,
-        "rank": 6
+        "rank": 5.33
+      },
+      {
+        "name": "Karthik",
+        "n": 2,
+        "score": 0,
+        "rank": 5.5
+      },
+      {
+        "name": "chad",
+        "n": 5,
+        "score": 37.6,
+        "rank": 5.6
+      },
+      {
+        "name": "Sher",
+        "n": 19,
+        "score": 21.9,
+        "rank": 5.63
+      },
+      {
+        "name": "Hamilton",
+        "n": 13,
+        "score": 18.6,
+        "rank": 5.77
+      },
+      {
+        "name": "Minjae",
+        "n": 22,
+        "score": 9.5,
+        "rank": 5.91
       }
     ]
   },
   "field": {
     "level": [
-      20.2,
-      34.4,
-      37.5,
-      28.3,
-      22.1,
-      40.7,
-      25,
-      41.9,
-      20.3,
-      62.3,
-      49.7,
-      22.1,
-      37.1,
-      20.4,
-      19.7,
+      25.5,
+      42.7,
+      43.2,
       35.8,
-      65.2,
-      22.8,
-      26.5,
-      19.2,
-      19.9,
-      35.5,
-      39,
-      75.3,
-      44.1,
-      75.1
+      26.7,
+      50.3,
+      31.2,
+      54.9,
+      22.9,
+      75.2,
+      57.1,
+      26.4,
+      49.3,
+      24.2,
+      23.9,
+      48.8,
+      74.7,
+      28.9,
+      30.2,
+      24.3,
+      22.2,
+      44,
+      45.9,
+      83.7,
+      57,
+      89.2
     ],
     "stage": [
-      0.474,
-      0.622,
+      0.382,
+      0.479,
       3
     ],
     "seatSd": 0.3,
     "playMinLen": 8
   },
   "lastAccepted": {
-    "at": "2026-10-24T08:42:24.495Z",
-    "gain": 0.30341666666666656,
-    "se": 0.11846335649241958,
-    "meanRank": 1.9,
-    "meanScore": 91.21666666666667,
+    "at": "2026-10-24T19:50:39.434Z",
+    "gain": 0.40423333333333333,
+    "se": 0.17116224893764864,
+    "meanRank": 2.0166666666666666,
+    "meanScore": 90.1,
     "was": {
-      "meanRank": 2.2,
-      "meanScore": 87.8
+      "meanRank": 2.4166666666666665,
+      "meanScore": 85.86666666666666
     }
   }
 }
