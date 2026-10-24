@@ -24,6 +24,9 @@ export const SPACE: Record<string, { lo: number; hi: number; int?: boolean; log?
   lamMarket: { lo: 0, hi: 1.5 },
   denyW: { lo: 0, hi: 0.6 },
   endgameN: { lo: 6, hi: 20, int: true },
+  bidMult: { lo: 1, hi: 1.5 },
+  bidFloor: { lo: 0, hi: 1.5 },
+  floorMinV: { lo: 0.3, hi: 3 },
 };
 
 export function tunableKeys(): string[] {
@@ -50,13 +53,13 @@ export function perturb(base: ParamSet, r: () => number, scale = 1): ParamSet {
 export interface Score { meanRank: number; meanScore: number; ranks: number[]; scores: number[] }
 
 // Runs every (candidate, seeds) pair across a pool of child processes.
-export async function evaluate(cands: ParamSet[], field: FieldModel, seeds: number[], rival: ParamSet | null, workers = os.cpus().length): Promise<Score[]> {
+export async function evaluate(cands: ParamSet[], field: FieldModel, seeds: number[], rival: ParamSet, rivals: number, workers = os.cpus().length): Promise<Score[]> {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const chunk = Math.max(2, Math.ceil(seeds.length / Math.max(1, Math.ceil((workers * 2) / cands.length))));
   const jobs: Job[] = [];
   cands.forEach((c, ci) => {
     for (let i = 0; i < seeds.length; i += chunk)
-      jobs.push({ id: jobs.length, params: { ...c, _cand: ci } as never, rival, field, seeds: seeds.slice(i, i + chunk) });
+      jobs.push({ id: jobs.length, params: { ...c, _cand: ci } as never, rival, rivals, field, seeds: seeds.slice(i, i + chunk) });
   });
   const results = new Map<number, Outcome[]>();
   const pool: ChildProcess[] = [];

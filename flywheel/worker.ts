@@ -5,9 +5,10 @@ import { rng } from "../src/engine.js";
 import { brainBot, playMatch } from "../src/sim.js";
 import { fieldBot, type FieldModel } from "./field.js";
 
-// `rival`: params for one extra seat running our own engine, standing in
-// for the top live bots (which out-score the field model). null = none.
-export interface Job { id: number; params: Record<string, unknown>; rival: Record<string, unknown> | null; field: FieldModel; seeds: number[] }
+// `rivals` seats run our own engine with `rival` params, standing in for
+// the top live bots (which out-score the field model); the rest of the
+// six seats are field-model bots.
+export interface Job { id: number; params: Record<string, unknown>; rival: Record<string, unknown>; rivals: number; field: FieldModel; seeds: number[] }
 export interface Outcome { score: number; rank: number }
 
 process.on("message", (job: Job) => {
@@ -20,8 +21,8 @@ process.on("message", (job: Job) => {
     const r = rng(seed * 31 + 7);
     const players = [
       brainBot("us", params as never, seed),
-      ...(job.rival ? [brainBot("rival", job.rival as never, seed + 1)] : []),
-      ...Array.from({ length: job.rival ? 4 : 5 }, (_, i) => fieldBot(d, job.field, r, `f${i}`)),
+      ...Array.from({ length: job.rivals }, (_, i) => brainBot(`rival${i}`, job.rival as never, seed + 1 + i)),
+      ...Array.from({ length: 5 - job.rivals }, (_, i) => fieldBot(d, job.field, r, `f${i}`)),
     ];
     const s = playMatch(players, seed).scores;
     out.push({ score: s[0]!, rank: 1 + s.filter((x) => x > s[0]!).length });
