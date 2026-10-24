@@ -91,7 +91,7 @@ export interface Params {
 
 export const DEFAULT_PARAMS: Params = {
   samples: 48,
-  maxMissing: 4,
+  maxMissing: 5,
   horizonCap: 60,
   minTargetLen: 4,
   lam0: 0.4,
