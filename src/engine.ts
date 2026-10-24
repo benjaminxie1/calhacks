@@ -96,7 +96,7 @@ export const DEFAULT_PARAMS: Params = {
   minTargetLen: 4,
   lam0: 0.4,
   lamBeta: 1.0,
-  lamGamma: 0.6,
+  lamGamma: 1.0,
   lamMin: 0.02,
   playEps: 0.5,
   firstPriceShade: 0.75,
