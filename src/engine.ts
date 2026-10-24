@@ -35,11 +35,27 @@ export function total(c: Counts): number {
 }
 
 // Market price (coins paid) per letter, seeded from the live server's
-// history of real-bot matches, then tracked online during a match.
+// history of real-bot matches (mean paid over the last 150 matches, as of
+// 2026-10-24), then tracked online during a match. params.json can
+// override it with a fresher "seedPrice".
 export const SEED_PRICE = [
-  7, 7, 8, 7, 7, 11, 6, 10, 7, 17, 12, 5, 8, 5, 7, 9, 18, 6, 6, 5, 6, 8, 9, 15,
-  10, 25,
+  10, 15, 15, 13, 11, 18, 12, 19, 10, 25, 21, 10, 16, 10, 10, 16, 23, 11, 12, 10,
+  9, 17, 17, 27, 19, 32,
 ];
+// The price level lam0 was tuned at. When the market runs hotter than
+// this, a coin buys less score, so λ falls (see lamMarket).
+export const REF_PRICE = SEED_PRICE.slice();
+
+// Bag-weighted mean price: the price of an "average" letter.
+export function priceLevel(price: ArrayLike<number>): number {
+  let s = 0;
+  let n = 0;
+  for (let c = 0; c < 26; c++) {
+    s += BAG[c]! * price[c]!;
+    n += BAG[c]!;
+  }
+  return s / n;
+}
 
 export interface Params {
   samples: number; // Monte Carlo futures per valuation
@@ -62,12 +78,21 @@ export interface Params {
   // count on that fraction of the bag, which is what makes a common letter
   // worth buying now rather than "later".
   availProb: number;
+  // λ scales with (reference price level / current price level)^lamMarket,
+  // so it tracks how hot the field in this match is. 0 disables.
+  lamMarket: number;
+  // Denial: add denyW × the most points one opponent would gain from this
+  // letter right now (from what they publicly hold). 0 disables.
+  denyW: number;
+  // Endgame: with this many auctions left, value letters by what they add
+  // to the best set of words we can play now.
+  endgameN: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
   samples: 48,
   maxMissing: 4,
-  horizonCap: 30,
+  horizonCap: 60,
   minTargetLen: 4,
   lam0: 0.4,
   lamBeta: 1.0,
@@ -78,7 +103,10 @@ export const DEFAULT_PARAMS: Params = {
   bidCapFrac: 1.0,
   paceEta: 0,
   lamMax: 3,
-  availProb: 1,
+  availProb: 0.4,
+  lamMarket: 0,
+  denyW: 0,
+  endgameN: 12,
 };
 
 // mulberry32
@@ -168,6 +196,13 @@ export function bestPartition(
   };
   dfs(0, 0);
   return { total: best, words: bestSet.map((i) => d.words[i]!) };
+}
+
+// Reward of the best single word spellable from `rack` (3+ letters).
+export function bestWord(d: Dict, rack: Counts): number {
+  let best = 0;
+  for (const i of spellable(d, rack, 3)) if (d.reward[i]! > best) best = d.reward[i]!;
+  return best;
 }
 
 // ---------- Monte Carlo valuation ----------
@@ -303,6 +338,15 @@ export interface BidInput {
   pool: Counts; // letters not yet revealed (current one excluded) and not ours
   bagLeft: number; // letters still in the bag after the current one
   firstPrice: boolean;
+  opps?: Opp[]; // public view of each opponent
+}
+
+// What everyone can see of an opponent: letters won minus letters played
+// (their 5 hidden starting tiles stay unknown), balance and score.
+export interface Opp {
+  known: Counts;
+  balance: number;
+  score: number;
 }
 
 export class Brain {
@@ -357,9 +401,10 @@ export class Brain {
     if (p.paceEta > 0) return this.lam;
     const frac = Math.max(0, bagLeft) / Math.max(1, this.totalAuctions);
     const rich = 100 / Math.max(balance, 5);
+    const hot = p.lamMarket ? Math.pow(priceLevel(REF_PRICE) / priceLevel(this.price), p.lamMarket) : 1;
     return Math.max(
       p.lamMin,
-      p.lam0 * Math.pow(frac, p.lamBeta) * Math.pow(rich, p.lamGamma),
+      p.lam0 * hot * Math.pow(frac, p.lamBeta) * Math.pow(rich, p.lamGamma),
     );
   }
 
@@ -391,7 +436,7 @@ export class Brain {
     let v = v1 - v0;
     // Near the end, multi-word dumps matter: count what the letter adds to
     // the best partition we could play right now.
-    if (inp.bagLeft <= 12) {
+    if (inp.bagLeft <= this.p.endgameN) {
       const with1 = Int16Array.from(rack);
       with1[letter]++;
       const a = bestPartition(this.d, rack, 25).total;
@@ -401,9 +446,25 @@ export class Brain {
     return Math.max(0, v);
   }
 
+  // The most points one opponent would score from `letter` now, from the
+  // tiles they publicly hold: best word with it minus best word without.
+  denyValue(letter: number, opps: Opp[]): number {
+    let best = 0;
+    for (const o of opps) {
+      if (total(o.known) < 2) continue;
+      const w = Int16Array.from(o.known);
+      w[letter]++;
+      const a = bestWord(this.d, o.known);
+      const b = bestWord(this.d, w);
+      if (b - a > best) best = b - a;
+    }
+    return best;
+  }
+
   decideBid(inp: BidInput): number {
     if (this.p.paceEta > 0) this.pace(inp.balance, inp.bagLeft);
-    const v = this.letterValue(inp);
+    let v = this.letterValue(inp);
+    if (this.p.denyW > 0 && inp.opps && inp.bagLeft > 0) v += this.p.denyW * this.denyValue(inp.letter, inp.opps);
     if (v <= 0) return 0;
     const lam = this.lambda(inp.balance, inp.bagLeft);
     let bid = v / lam;
@@ -467,8 +528,37 @@ export class Brain {
 
 // Unseen letters from our point of view: the full bag minus every letter
 // auctioned so far (public) minus our own starting rack.
-export function unseenPool(auctioned: Counts, myStart: Counts): Counts {
+// `revealed` (optional): opponents' hidden starting tiles that their word
+// plays have exposed (letters played beyond letters won), which will
+// never come up for auction either.
+export function unseenPool(auctioned: Counts, myStart: Counts, revealed?: Counts): Counts {
   const p = emptyCounts();
-  for (let c = 0; c < 26; c++) p[c] = Math.max(0, BAG[c]! - auctioned[c]! - myStart[c]!);
+  for (let c = 0; c < 26; c++)
+    p[c] = Math.max(0, BAG[c]! - auctioned[c]! - myStart[c]! - (revealed ? revealed[c]! : 0));
   return p;
+}
+
+// Public bookkeeping for one opponent, from auction wins and word plays.
+export class OppTracker {
+  won = emptyCounts();
+  played = emptyCounts();
+  balance = 100;
+  score = 0;
+  addWin(letter: number) {
+    this.won[letter]++;
+  }
+  addPlay(word: string) {
+    for (const ch of word) this.played[ch.charCodeAt(0) - 65]++;
+  }
+  view(): Opp {
+    const k = emptyCounts();
+    for (let c = 0; c < 26; c++) k[c] = Math.max(0, this.won[c]! - this.played[c]!);
+    return { known: k, balance: this.balance, score: this.score };
+  }
+  // Hidden starting tiles their plays have shown.
+  revealed(): Counts {
+    const r = emptyCounts();
+    for (let c = 0; c < 26; c++) r[c] = Math.max(0, this.played[c]! - this.won[c]!);
+    return r;
+  }
 }

@@ -1,35 +1,14 @@
 // Usage: tsx src/run-sim.ts [lineup] [matches] [seed]
 // Prints average score, rank and win rate per seat.
-import { loadDict } from "./dict.js";
-import { rng } from "./engine.js";
-import { brainBot, playMatch, sharkModel, simBot, starterBot, type Player } from "./sim.js";
+import { makePlayers } from "./lineup.js";
+import { playMatch } from "./sim.js";
 
 const lineup = process.argv[2] ?? "brain,shark,shark,shark,shark,shark";
 const N = Number(process.argv[3] ?? 20);
 const seed0 = Number(process.argv[4] ?? 1);
 const firstPrice = process.env.FIRST_PRICE === "1";
-const extra = process.env.PARAMS ? JSON.parse(process.env.PARAMS) : {};
-const extraB = process.env.PARAMS_B ? JSON.parse(process.env.PARAMS_B) : {};
-const d = loadDict();
-const r = rng(seed0 * 7919);
-
-function make(kind: string, i: number): Player {
-  // brainL0.1 = a brain with fixed λ0 = 0.1 (the aggressive self-play optimum)
-  if (kind.startsWith("brainL")) return brainBot(kind + i, { lam0: Number(kind.slice(6)) }, seed0 * 3000 + i);
-  switch (kind) {
-    case "brain": return brainBot(`brain${i}`, extra, seed0 * 1000 + i);
-    case "brainB": return brainBot(`brainB${i}`, extraB, seed0 * 2000 + i);
-    case "shark": return sharkModel(d, r, 1);
-    case "shark13": return sharkModel(d, r, 1.3);
-    case "starter": return starterBot(d);
-    case "cheap": return simBot("Cheapskate", r);
-    case "value": return simBot("ValueBidder", r);
-    case "aggr": return simBot("Aggressive", r);
-    default: throw new Error(kind);
-  }
-}
 const kinds = lineup.split(",");
-const players = kinds.map(make);
+const players = makePlayers(kinds, seed0);
 const sums = kinds.map(() => ({ score: 0, rank: 0, win: 0, bal: 0 }));
 const t0 = Date.now();
 for (let m = 0; m < N; m++) {
