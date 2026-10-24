@@ -16,6 +16,7 @@
 //   * Under Vickrey (the default) truthful bidding of that value is
 //     optimal; under first-price we shade towards the expected runner-up.
 
+import * as fs from "node:fs";
 import { BAG, LETTER_VALUE, loadDict, type Dict } from "./dict.js";
 
 export type Counts = Int16Array; // 26 slots
@@ -95,6 +96,11 @@ export interface Params {
   // Cap bids on J/Q/X/Z at this multiple of their market price (0 = no cap).
   // Live, polarbear paid ~40 for these against ~21 by the bots that beat it.
   rareCap: number;
+  // Learned letter values (flywheel/valuecorr.ts): scale a letter's value by
+  // corr[letter][third of the bag]^valueCorr. 0 = off. valueCorrSplit picks
+  // the table: 0 = credit by letter value, 1 = equal credit per tile.
+  valueCorr: number;
+  valueCorrSplit: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -117,7 +123,21 @@ export const DEFAULT_PARAMS: Params = {
   endgameN: 12,
   flushAt: 1,
   rareCap: 0,
+  valueCorr: 0,
+  valueCorrSplit: 1,
 };
+
+let corrTables: { face: number[][]; equal: number[][] } | null | undefined;
+function valueCorrTables() {
+  if (corrTables === undefined) {
+    try {
+      corrTables = JSON.parse(fs.readFileSync(new URL("../flywheel/valuecorr.json", import.meta.url), "utf8"));
+    } catch {
+      corrTables = null;
+    }
+  }
+  return corrTables;
+}
 
 // mulberry32
 export function rng(seed: number) {
@@ -474,6 +494,12 @@ export class Brain {
   decideBid(inp: BidInput): number {
     if (this.p.paceEta > 0) this.pace(inp.balance, inp.bagLeft);
     let v = this.letterValue(inp);
+    if (this.p.valueCorr > 0 && inp.bagLeft > 0) {
+      const table = valueCorrTables()?.[this.p.valueCorrSplit ? "equal" : "face"];
+      const stage = Math.min(2, Math.max(0, Math.floor((3 * (this.totalAuctions - 1 - inp.bagLeft)) / this.totalAuctions)));
+      const c = table?.[inp.letter]?.[stage];
+      if (c) v *= Math.pow(c, this.p.valueCorr);
+    }
     if (this.p.denyW > 0 && inp.opps && inp.bagLeft > 0) v += this.p.denyW * this.denyValue(inp.letter, inp.opps);
     if (v <= 0) return 0;
     const lam = this.lambda(inp.balance, inp.bagLeft);
