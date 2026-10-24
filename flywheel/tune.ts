@@ -24,6 +24,7 @@ export const SPACE: Record<string, { lo: number; hi: number; int?: boolean; log?
   lamMarket: { lo: 0, hi: 1.5 },
   denyW: { lo: 0, hi: 0.6 },
   endgameN: { lo: 6, hi: 20, int: true },
+  rareCap: { lo: 0.8, hi: 3 },
 };
 
 export function tunableKeys(): string[] {

@@ -29,5 +29,6 @@
   ],
   "denyW": 0.078,
   "playEps": 0.053,
-  "lamGamma": 0.964
+  "lamGamma": 0.964,
+  "rareCap": 1.3
 }

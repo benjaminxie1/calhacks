@@ -92,6 +92,9 @@ export interface Params {
   // 1 plays out an auction earlier and again in the last one. In the
   // sim, 1 costs 0.1 points a match (81.0 vs 80.9 over 96 paired matches).
   flushAt: number;
+  // Cap bids on J/Q/X/Z at this multiple of their market price (0 = no cap).
+  // Live, polarbear paid ~40 for these against ~21 by the bots that beat it.
+  rareCap: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -113,6 +116,7 @@ export const DEFAULT_PARAMS: Params = {
   denyW: 0,
   endgameN: 12,
   flushAt: 1,
+  rareCap: 0,
 };
 
 // mulberry32
@@ -480,6 +484,7 @@ export class Brain {
       const market = this.price[inp.letter]! * 1.25 + 1;
       bid = Math.min(bid * this.p.firstPriceShade, Math.max(market, bid * 0.4));
     }
+    if (this.p.rareCap > 0 && LETTER_VALUE[inp.letter]! >= 8) bid = Math.min(bid, this.p.rareCap * this.price[inp.letter]!);
     const cap = inp.bagLeft > 8 ? inp.balance * this.p.bidCapFrac : inp.balance;
     return Math.max(0, Math.min(Math.floor(bid), Math.floor(cap)));
   }
