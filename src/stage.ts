@@ -21,7 +21,10 @@ export const STAGE_PARAMS: Record<Stage, Partial<Params>> = {
   casual: {},
   swiss: {},
   bracket: {},
-  final: {},
+  // Heads-up, our value-only bidding let the opponent take most letters
+  // for 1 coin (sim vs scout models of Doppio/Nijello/postturing/Karthik:
+  // 2-6% wins). A floor bid at the pre-match price on every letter: 60-69%.
+  final: { seedFloor: 1 },
 };
 
 export function stageOf(phaseTag: string | undefined): Stage {
