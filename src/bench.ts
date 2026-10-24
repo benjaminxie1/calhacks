@@ -4,6 +4,7 @@
 //   WORKERS (default: cores). Prints per-seat mean ± s.e. and the field's
 //   average price per letter, to compare with the live market.
 import { fork } from "node:child_process";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import { chr } from "./dict.js";
 import { makePlayers } from "./lineup.js";
@@ -84,10 +85,13 @@ if (process.env.BENCH_CHILD) {
     const sc = all.scores.map((r) => r[i]!);
     const rk = all.ranks.map((r) => r[i]!);
     const win = rk.filter((x) => x === 1).length / rk.length;
+    const last = rk.filter((x) => x === kinds.length).length / rk.length;
     console.log(
-      `${(k + i).padEnd(10)} score ${mean(sc).toFixed(1).padStart(6)} ±${se(sc).toFixed(1)}  rank ${mean(rk).toFixed(2)} ±${se(rk).toFixed(2)}  win ${(100 * win).toFixed(0).padStart(3)}%  endbal ${mean(all.bals.map((r) => r[i]!)).toFixed(0)}`,
+      `${(k + i).padEnd(10)} score ${mean(sc).toFixed(1).padStart(6)} ±${se(sc).toFixed(1)}  rank ${mean(rk).toFixed(2)} ±${se(rk).toFixed(2)}  win ${(100 * win).toFixed(0).padStart(3)}%  last ${(100 * last).toFixed(0).padStart(3)}%  endbal ${mean(all.bals.map((r) => r[i]!)).toFixed(0)}`,
     );
   });
+  // BENCH_DUMP=<file>: per-match scores and ranks, for paired comparisons.
+  if (process.env.BENCH_DUMP) fs.writeFileSync(process.env.BENCH_DUMP, JSON.stringify({ lineup: kinds, scores: all.scores, ranks: all.ranks }));
   if (process.env.PRICES)
     console.log(
       "paid/top: " +

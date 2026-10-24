@@ -382,6 +382,12 @@ export class Brain {
     this.lam = this.p.lam0;
   }
 
+  // Auctions in a match of n bots: the bag less every starting rack
+  // (68 at 6 bots, 78 at 4, 88 heads-up). λ paces against this.
+  setPlayers(n: number, rackSize = 5) {
+    this.totalAuctions = Math.max(1, BAG.reduce((a, b) => a + b, 0) - n * rackSize);
+  }
+
   // Our own auction outcome: what we paid (0 if we lost).
   observeSpend(paid: number) {
     this.spentSinceUpdate += paid;

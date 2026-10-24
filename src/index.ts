@@ -32,6 +32,7 @@ import { Brain, DEFAULT_PARAMS, countsOf, emptyCounts, unseenPool, type Counts, 
 import { BAG } from "./dict.js";
 import { Relay } from "./relay.js";
 import { DEFAULT_TEAM, teamBid, type Mate, type TeamConfig } from "./team.js";
+import { stageOf, stageParams, type Stage } from "./stage.js";
 
 const HOST = process.env.STDB_HOST ?? "https://maincloud.spacetimedb.com";
 const DB_NAME = process.env.STDB_DB ?? "scrabblebot";
@@ -116,8 +117,9 @@ function log(ev: Record<string, unknown>) {
 
 // params.json (if present and valid) + PARAMS env. Unknown keys are
 // dropped; a bad file keeps the last good params.
-let fileParams: Partial<Params> & { seedPrice?: number[] } = {};
-function loadParams(): Partial<Params> & { seedPrice?: number[] } {
+type FileParams = Partial<Params> & { seedPrice?: number[]; stages?: Partial<Record<Stage, Partial<Params>>> };
+let fileParams: FileParams = {};
+function loadParams(): FileParams {
   try {
     if (fs.existsSync(PARAMS_FILE)) {
       const raw = JSON.parse(fs.readFileSync(PARAMS_FILE, "utf8"));
@@ -126,6 +128,16 @@ function loadParams(): Partial<Params> & { seedPrice?: number[] } {
         if (k in DEFAULT_PARAMS && typeof v === "number" && Number.isFinite(v)) next[k] = v;
         if (k === "seedPrice" && Array.isArray(v) && v.length === 26 && v.every((x) => typeof x === "number" && x > 0))
           next[k] = v;
+        if (k === "stages" && v && typeof v === "object") {
+          const st: Record<string, Record<string, number>> = {};
+          for (const [sk, sv] of Object.entries(v as Record<string, unknown>)) {
+            if (!sv || typeof sv !== "object") continue;
+            st[sk] = {};
+            for (const [pk, pv] of Object.entries(sv as Record<string, unknown>))
+              if (pk in DEFAULT_PARAMS && typeof pv === "number" && Number.isFinite(pv)) st[sk]![pk] = pv;
+          }
+          next[k] = st;
+        }
       }
       fileParams = next;
     }
@@ -146,10 +158,41 @@ function brainFor(matchId: bigint): Brain {
       lastParams = s;
     }
     log({ type: "params", match: matchId, params });
-    b = new Brain(params);
+    const { stages, ...flat } = params;
+    b = new Brain(flat);
     brains.set(k, b);
+    brainBase.set(k, { flat, stages });
   }
+  tuneForMatch(liveConn, matchId, b);
   return b;
+}
+
+// Stage and table size of a match, applied to its brain once known (the
+// tournament_match row arrives with the match subscription, which can be
+// a moment after our rack does).
+const brainBase = new Map<string, { flat: Partial<Params>; stages: FileParams["stages"] }>();
+const brainStage = new Map<string, string>();
+function stageFor(conn: DbConnection | null, matchId: bigint): Stage {
+  if (!conn) return "casual";
+  for (const tm of conn.db.tournamentMatch.iter()) if (tm.matchId === matchId) return stageOf(tm.phase.tag);
+  return "casual";
+}
+function tuneForMatch(conn: DbConnection | null, matchId: bigint, b: Brain) {
+  const k = String(matchId);
+  if (!conn || !subApplied.has(k)) return;
+  const stage = stageFor(conn, matchId);
+  let n = 0;
+  for (const p of conn.db.matchParticipant.iter()) if (p.matchId === matchId) n++;
+  const rackSize = conn.db.matchState.id.find(matchId)?.startingRackSize ?? 5;
+  const key = `${stage}/${n}/${rackSize}`;
+  if (brainStage.get(k) === key) return;
+  brainStage.set(k, key);
+  const base = brainBase.get(k);
+  const over = stageParams(stage, base?.stages);
+  b.p = { ...DEFAULT_PARAMS, ...(base?.flat ?? {}), ...over };
+  if (n > 0) b.setPlayers(n, rackSize);
+  console.log(`[${BOT_NAME}] m${matchId}: ${stage}, ${n} bots, ${b.totalAuctions} auctions${Object.keys(over).length ? `, stage params ${JSON.stringify(over)}` : ""}`);
+  log({ type: "stage", match: matchId, stage, players: n, auctions: b.totalAuctions, over });
 }
 
 function rackFor(conn: DbConnection, matchId: bigint): Counts {
@@ -218,6 +261,7 @@ function subscribeMatch(conn: DbConnection, matchId: bigint) {
       `SELECT * FROM auction_result WHERE match_id = ${matchId}`,
       `SELECT * FROM word_play WHERE match_id = ${matchId}`,
       `SELECT * FROM match_participant WHERE match_id = ${matchId}`,
+      `SELECT * FROM tournament_match WHERE match_id = ${matchId}`,
     ]);
   matchSubs.set(k, h);
 }
@@ -471,8 +515,21 @@ function inOpenLobby(conn: DbConnection): boolean {
   return false;
 }
 
+// Entered in a tournament that is under way and not knocked out: the
+// server refuses lobby joins, and our next tournament match can start the
+// moment the last one ends (Swiss rounds start back to back), so we must
+// not restart for new code until we're out or it ends.
+function inTournament(conn: DbConnection): boolean {
+  for (const e of conn.db.tournamentEntry.iter()) {
+    if (e.botId !== myBotId || e.eliminated) continue;
+    const st = conn.db.tournament.id.find(e.tournamentId)?.status.tag;
+    if (st === "Swiss" || st === "Bracket" || st === "Final") return true;
+  }
+  return false;
+}
+
 function joinLobby(conn: DbConnection) {
-  if (myBotId === null || restartPending || inMatch(conn) || inOpenLobby(conn)) return;
+  if (myBotId === null || restartPending || inMatch(conn) || inOpenLobby(conn) || inTournament(conn)) return;
   // A join we just sent may have started a match we haven't heard of yet.
   if (Date.now() - lastJoinAt < 3000) return;
   if (waitForAllies(conn)) return;
@@ -516,7 +573,10 @@ function onMatchEnded(conn: DbConnection, matchId: bigint) {
   const k = String(matchId);
   if (loggedEnd.has(k)) return;
   loggedEnd.add(k);
+  const stage = brainStage.get(k);
   brains.delete(k);
+  brainBase.delete(k);
+  brainStage.delete(k);
   relay?.forget(k);
   freeSince = Date.now();
   const ps = Array.from(conn.db.matchParticipant.iter())
@@ -532,6 +592,7 @@ function onMatchEnded(conn: DbConnection, matchId: bigint) {
       score: me.score,
       balance: me.balance,
       rank,
+      stage,
       field: ps.map((x) => ({ bot: x.botId, name: conn.db.bot.id.find(x.botId)?.name, score: x.score, balance: x.balance })),
     });
   }
@@ -670,7 +731,7 @@ DbConnection.builder()
 
 let restartPending = false;
 function restartWhenFree(conn: DbConnection) {
-  if (!restartPending || inMatch(conn) || inOpenLobby(conn)) return;
+  if (!restartPending || inMatch(conn) || inOpenLobby(conn) || inTournament(conn)) return;
   console.log(`[${BOT_NAME}] restarting for new code`);
   process.exit(75);
 }
@@ -684,6 +745,7 @@ setInterval(() => {
   }
   if (!connected || !liveConn || myBotId === null) return;
   lastConnectedAt = now;
+  registerTournaments(liveConn); // retries a registration that failed
   if (runningMatches(liveConn).length) {
     if (now - lastEventAt > STALL_MS) {
       console.error(`[${BOT_NAME}] no updates for ${STALL_MS / 1000}s during a match, restarting`);

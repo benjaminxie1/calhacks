@@ -217,8 +217,9 @@ export function brainBot(name: string, p: Partial<Params>, seed: number): Player
   let lastRackKey = "";
   return {
     name,
-    start(rack) {
+    start(rack, n) {
       brain = new Brain(p, seed++);
+      if (process.env.NAWARE !== "0") brain.setPlayers(n);
       myStart = Int16Array.from(rack);
       lastRackKey = "";
     },
