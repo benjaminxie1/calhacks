@@ -4,7 +4,7 @@
 // First run:  BOT_NAME=<name> BOT_TOKEN=<token from /team> npm start
 // Later runs: BOT_NAME=<name> npm start   (token saved to .token-<name>)
 // Unattended: BOT_NAME=<name> scripts/live.sh  (restarts, pulls updates)
-// Tournament: add TOURNAMENT_ID=<id>
+// Tournament: auto-registers when one opens; TOURNAMENT_ID=<id> restricts it to one
 // Tuning:     params.json (re-read at each new match), then PARAMS='{"lam0":0.3}'
 //             on top. Both are partial engine Params; params.json may also
 //             carry "seedPrice": [26 numbers].
@@ -317,12 +317,22 @@ function joinLobby(conn: DbConnection) {
   conn.reducers.joinLobby({}).catch(warn("joining the lobby"));
 }
 
+// Register for any tournament that opens registration (or only TOURNAMENT_ID, if set).
+// The reducer is idempotent, so retrying on every update is safe.
+const registeredFor = new Set<string>();
+function maybeRegister(conn: DbConnection, t: { id: bigint; status: { tag: string } }) {
+  const k = String(t.id);
+  if (DRY_RUN || t.status.tag !== "Registration" || registeredFor.has(k)) return;
+  if (TOURNAMENT_ID && TOURNAMENT_ID !== k) return;
+  registeredFor.add(k);
+  conn.reducers
+    .registerForTournament({ tournamentId: t.id })
+    .then(() => console.log(`[${BOT_NAME}] registered for tournament ${k}`))
+    .catch((e) => (registeredFor.delete(k), warn("tournament registration")(e)));
+}
+
 function bootstrap(conn: DbConnection) {
-  if (TOURNAMENT_ID && !DRY_RUN)
-    conn.reducers
-      .registerForTournament({ tournamentId: BigInt(TOURNAMENT_ID) })
-      .then(() => console.log(`[${BOT_NAME}] registered for tournament ${TOURNAMENT_ID}`))
-      .catch(warn("tournament registration"));
+  for (const t of conn.db.tournament.iter()) maybeRegister(conn, t);
   for (const p of conn.db.matchParticipant.iter()) if (p.botId === myBotId) subscribeMatch(conn, p.matchId);
   joinLobby(conn);
 }
@@ -409,6 +419,7 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
           "SELECT * FROM lobby",
           "SELECT * FROM match_state",
           "SELECT * FROM my_rack",
+          "SELECT * FROM tournament",
         ]);
     })
     .subscribe(["SELECT * FROM bot_credential", "SELECT * FROM bot"]);
@@ -421,6 +432,8 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   conn.db.auction.onUpdate(touch);
   conn.db.myRack.onInsert((_c, h) => (touch(), queuePlays(conn, h.matchId)));
   conn.db.myRack.onUpdate((_c, _o, h) => (touch(), queuePlays(conn, h.matchId)));
+  conn.db.tournament.onInsert((_c, t) => maybeRegister(conn, t));
+  conn.db.tournament.onUpdate((_c, _o, t) => maybeRegister(conn, t));
   conn.db.matchParticipant.onInsert((_c, p) => {
     if (p.botId === myBotId) subscribeMatch(conn, p.matchId);
   });
