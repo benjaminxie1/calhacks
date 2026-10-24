@@ -178,6 +178,25 @@ on 86.2 / rank 2.90 / +12.5 vs the rest of the table over 20 matches, off 83.3 /
 +7.8 over 21. That's in the cap's favour but within noise (0.4-0.7 s.e.). It agrees with
 the sim, so it stays on.
 
+### League of 25 variants (Oct 24)
+
+`src/league.ts`: 25 one-idea-at-a-time variants of the live settings play each other in
+random 6-seat tables. 600 matches, about 145 per variant. Edges are in mean rank vs the
+live settings (positive = better):
+
+- Significantly worse: dropping opponents' revealed starting tiles from the unseen pool
+  (-0.44, 2.2 s.e.; the live client had this gap, fixed in db32058), learned letter values
+  credited by letter value (`valueCorr` 1, split 0: -0.50, 2.6 s.e.), `lamGamma` 0.6 (-0.45,
+  2.3 s.e.).
+- Everything else was within about ±0.35, under 2 s.e.: more or fewer samples,
+  `maxMissing`, `horizonCap`, `denyW` 0-0.4, `lam0` 0.3/0.5, `playEps`, `availProb` 0.15,
+  `endgameN`, and the `pot` strategy.
+- The top three (code defaults +0.23, no `rareCap` +0.18, equal-credit `valueCorr` 0.5
+  +0.08) went to a paired runoff (`src/runoff.ts`: candidate and the live settings at the
+  same table on the same seeds, 200 matches each). None held up: -0.06 / -0.01 / +0.07
+  ±0.12. So the live settings stay. The parameters are on a plateau, and the next edge has
+  to come from a structural change.
+
 ## Next steps, in order
 
 1. **Fix the known valuation flaw.** The trace shows the bot bidding 1–9 on common letters
