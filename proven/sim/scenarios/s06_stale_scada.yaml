@@ -1,0 +1,5 @@
+id: s06_stale_scada
+faults: [F6]
+work_orders: [{asset: INV-3, work_order: reseat_comms_card}]
+invoice: {matches_card: true, completion_note: "Comms card reseated, telemetry nominal."}
+expect: HOLD           # telemetry looks perfect; last_update_ts is stale

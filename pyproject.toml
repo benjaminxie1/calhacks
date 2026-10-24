@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proven"
+version = "0.0.1"
+description = "Paid Means Proven: AP three-way match where the receipt of service is an independently verified fix"
+requires-python = ">=3.10"
+dependencies = ["anthropic", "droid-sdk[mcp]", "pyyaml", "pydantic", "python-dotenv"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["proven*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

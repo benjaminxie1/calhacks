@@ -1,0 +1,12 @@
+# O&M contractor rate card. Units: minutes on site, USD, must the asset be de-energized.
+# Re-derived for this project; mirrors the kind of card a small solar IPP signs with an O&M vendor.
+work_orders:
+  inspect:                 {minutes: 30,  usd: 400,  needs_deenergized: false}
+  replace_fan_filter:      {minutes: 60,  usd: 1800, needs_deenergized: true}
+  reseat_comms_card:       {minutes: 45,  usd: 900,  needs_deenergized: true}
+  replace_mc4_connector:   {minutes: 60,  usd: 1200, needs_deenergized: true}
+  clean_modules:           {minutes: 120, usd: 2500, needs_deenergized: false}
+  replace_module:          {minutes: 90,  usd: 2200, needs_deenergized: true}
+travel_usd: 250            # one trip charge per visit; a second visit for a relapse is on the contractor
+tolerance_pct: 2           # invoice may differ from the card by this much before DISPUTE
+approval_threshold_usd: 2500

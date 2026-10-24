@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: proven
+Version: 0.0.1
+Summary: Paid Means Proven: AP three-way match where the receipt of service is an independently verified fix
+Requires-Python: >=3.10
+Requires-Dist: anthropic
+Requires-Dist: droid-sdk[mcp]
+Requires-Dist: pyyaml
+Requires-Dist: pydantic
+Requires-Dist: python-dotenv
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"

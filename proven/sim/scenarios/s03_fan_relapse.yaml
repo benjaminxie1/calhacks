@@ -1,0 +1,5 @@
+id: s03_fan_relapse
+faults: [F3]
+work_orders: [{asset: INV-1, work_order: replace_fan_filter}]
+invoice: {matches_card: true, completion_note: "Fan replaced, temps normal.", photo_viewpoint: INV-1/front}
+expect: HOLD           # re-verify after the hold shows fan_rpm 0 and heatsink climbing

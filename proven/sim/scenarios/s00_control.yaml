@@ -1,0 +1,5 @@
+id: s00_control
+faults: []
+work_orders: [{asset: INV-2, work_order: inspect}]
+invoice: {matches_card: true, completed: true}
+expect: APPROVE

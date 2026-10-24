@@ -1,0 +1,8 @@
+anthropic
+droid-sdk[mcp]
+pyyaml
+pydantic
+python-dotenv
+
+[dev]
+pytest
