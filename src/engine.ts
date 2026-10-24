@@ -567,7 +567,9 @@ export class Brain {
   // See seedFloor. Paced like the live field: scaled by coins per auction
   // left over 1.6, within 0.5-1.3.
   floorBid(inp: BidInput): number {
-    if (this.p.seedFloor <= 0 || inp.bagLeft <= 0) return 0;
+    // Vickrey only: under first-price the winner pays its own bid, so there
+    // is no 1-coin gift to deny (sim heads-up: the floor cost 46 pts).
+    if (this.p.seedFloor <= 0 || inp.bagLeft <= 0 || inp.firstPrice) return 0;
     const perAuction = inp.balance / Math.max(1, inp.bagLeft + 1);
     const pace = Math.min(1.3, Math.max(0.5, perAuction / 1.6));
     return Math.max(0, Math.min(Math.floor(this.p.seedFloor * this.seedPrice[inp.letter]! * pace), Math.floor(inp.balance)));

@@ -206,7 +206,7 @@ function tuneForMatch(conn: DbConnection | null, matchId: bigint, b: Brain) {
   if (brainStage.get(k) === key) return;
   brainStage.set(k, key);
   const base = brainBase.get(k);
-  const over = stageParams(stage, base?.stages);
+  const over = stageParams(stage, n, base?.stages);
   b.p = { ...DEFAULT_PARAMS, ...(base?.flat ?? {}), ...over };
   if (n > 0) b.setPlayers(n, rackSize);
   console.log(`[${BOT_NAME}] m${matchId}: ${stage}, ${n} bots, ${b.totalAuctions} auctions${Object.keys(over).length ? `, stage params ${JSON.stringify(over)}` : ""}`);
