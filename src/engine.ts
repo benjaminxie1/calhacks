@@ -1,0 +1,472 @@
+// The strategy: Monte Carlo valuation of letters against target words.
+//
+// The game in strategy terms:
+//   * Score is the sum of word rewards; money spent on bids is NOT deducted
+//     from score. Money only buys letters, and leftover money at the end is
+//     worth nothing. So this is a budget-pacing problem for a "value
+//     maximiser": bid v/λ where v is a letter's marginal score and λ is the
+//     score a coin can still buy (Gummadi-Key-Proutiere / Balseiro-Gur
+//     pacing). λ falls to ~0 as the bag empties.
+//   * Rewards are superlinear in length (3x at 7+ letters), so a letter's
+//     worth is how much it raises the chance of completing a long, valuable
+//     word before the bag runs out. We estimate that like Maven/Quackle's
+//     simulation: sample the letters the bag will still reveal, and see
+//     which target words become completable, net of what the missing
+//     letters will cost at market prices.
+//   * Under Vickrey (the default) truthful bidding of that value is
+//     optimal; under first-price we shade towards the expected runner-up.
+
+import { BAG, LETTER_VALUE, loadDict, type Dict } from "./dict.js";
+
+export type Counts = Int16Array; // 26 slots
+
+export function emptyCounts(): Counts {
+  return new Int16Array(26);
+}
+export function countsOf(s: string): Counts {
+  const c = emptyCounts();
+  for (const ch of s) c[ch.charCodeAt(0) - 65]++;
+  return c;
+}
+export function total(c: Counts): number {
+  let t = 0;
+  for (let i = 0; i < 26; i++) t += c[i]!;
+  return t;
+}
+
+// Market price (coins paid) per letter, seeded from the live server's
+// history of real-bot matches, then tracked online during a match.
+export const SEED_PRICE = [
+  7, 7, 8, 7, 7, 11, 6, 10, 7, 17, 12, 5, 8, 5, 7, 9, 18, 6, 6, 5, 6, 8, 9, 15,
+  10, 25,
+];
+
+export interface Params {
+  samples: number; // Monte Carlo futures per valuation
+  maxMissing: number; // ignore targets missing more letters than this
+  horizonCap: number; // how many future reveals a plan may rely on
+  minTargetLen: number;
+  lam0: number; // score per coin at the start of a match
+  lamBeta: number; // how λ decays with the share of the bag left
+  lamGamma: number; // how λ scales with how rich we are
+  lamMin: number;
+  playEps: number; // a play must beat holding by this many points
+  firstPriceShade: number; // fraction of value bid under first-price
+  bidCapFrac: number; // never bid more than this share of balance (mid-game)
+  // Adaptive pacing (dual descent on the budget constraint, after
+  // Balseiro & Gur): raise λ when we spend faster than balance/auctions
+  // left, lower it when we underspend. 0 disables.
+  paceEta: number;
+  lamMax: number;
+  // Share of future letters we can realistically win. A plan can only
+  // count on that fraction of the bag, which is what makes a common letter
+  // worth buying now rather than "later".
+  availProb: number;
+}
+
+export const DEFAULT_PARAMS: Params = {
+  samples: 48,
+  maxMissing: 4,
+  horizonCap: 30,
+  minTargetLen: 4,
+  lam0: 0.4,
+  lamBeta: 1.0,
+  lamGamma: 0.6,
+  lamMin: 0.02,
+  playEps: 0.5,
+  firstPriceShade: 0.75,
+  bidCapFrac: 1.0,
+  paceEta: 0,
+  lamMax: 3,
+  availProb: 1,
+};
+
+// mulberry32
+export function rng(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------- Word search ----------
+
+// Indices of words spellable from `rack` with length >= minLen.
+export function spellable(d: Dict, rack: Counts, minLen = 2): number[] {
+  const t = total(rack);
+  const out: number[] = [];
+  const n = d.words.length;
+  for (let i = 0; i < n; i++) {
+    const L = d.len[i]!;
+    if (L > t || L < minLen) continue;
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    let ok = true;
+    for (let k = s; k < e; k++) {
+      if (d.letters[2 * k + 1]! > rack[d.letters[2 * k]!]!) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) out.push(i);
+  }
+  return out;
+}
+
+// Best set of disjoint words from `rack` (max total reward). Branch and
+// bound over the spellable words, capped by time.
+export function bestPartition(
+  d: Dict,
+  rack: Counts,
+  budgetMs = 60,
+): { total: number; words: string[] } {
+  const cand = spellable(d, rack, 2).sort((a, b) => d.reward[b]! - d.reward[a]!);
+  const r = Int16Array.from(rack);
+  let best = 0;
+  let bestSet: number[] = [];
+  const cur: number[] = [];
+  const deadline = Date.now() + budgetMs;
+  let nodes = 0;
+  const valueLeft = () => {
+    let v = 0;
+    for (let c = 0; c < 26; c++) v += r[c]! * LETTER_VALUE[c]!;
+    return v;
+  };
+  const fits = (i: number) => {
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    for (let k = s; k < e; k++)
+      if (d.letters[2 * k + 1]! > r[d.letters[2 * k]!]!) return false;
+    return true;
+  };
+  const apply = (i: number, sign: number) => {
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    for (let k = s; k < e; k++) r[d.letters[2 * k]!] -= sign * d.letters[2 * k + 1]!;
+  };
+  const dfs = (from: number, score: number) => {
+    if (score > best) {
+      best = score;
+      bestSet = cur.slice();
+    }
+    if ((++nodes & 255) === 0 && Date.now() > deadline) return;
+    if (score + 3 * valueLeft() <= best) return;
+    for (let j = from; j < cand.length; j++) {
+      const i = cand[j]!;
+      if (!fits(i)) continue;
+      apply(i, 1);
+      cur.push(i);
+      dfs(j, score + d.reward[i]!);
+      cur.pop();
+      apply(i, -1);
+      if (Date.now() > deadline) return;
+    }
+  };
+  dfs(0, 0);
+  return { total: best, words: bestSet.map((i) => d.words[i]!) };
+}
+
+// ---------- Monte Carlo valuation ----------
+
+export interface Market {
+  price: number[]; // expected coins to win each letter
+  lambda: number; // score per coin
+}
+
+// Draw `h` letters without replacement from `pool`, `k` times.
+export function sampleFutures(
+  pool: Counts,
+  h: number,
+  k: number,
+  rand: () => number,
+  avail = 1,
+): Int16Array[] {
+  const bag: number[] = [];
+  for (let c = 0; c < 26; c++) for (let n = 0; n < pool[c]!; n++) bag.push(c);
+  const take = Math.min(h, bag.length);
+  const out: Int16Array[] = [];
+  for (let s = 0; s < k; s++) {
+    const f = new Int16Array(26);
+    for (let i = 0; i < take; i++) {
+      const j = i + Math.floor(rand() * (bag.length - i));
+      const t = bag[i]!;
+      bag[i] = bag[j]!;
+      bag[j] = t;
+      if (avail >= 1 || rand() < avail) f[bag[i]!]++;
+    }
+    out.push(f);
+  }
+  return out;
+}
+
+interface Cand {
+  i: number;
+  cost: number; // λ * price of letters missing from the rack
+}
+
+function candidates(
+  d: Dict,
+  rack: Counts,
+  m: Market,
+  maxMissing: number,
+  minLen: number,
+): Cand[] {
+  const out: Cand[] = [];
+  const n = d.words.length;
+  const t = total(rack);
+  for (let i = 0; i < n; i++) {
+    const L = d.len[i]!;
+    if (L < minLen || L > t + maxMissing) continue;
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    let miss = 0;
+    let cost = 0;
+    for (let k = s; k < e; k++) {
+      const c = d.letters[2 * k]!;
+      const need = d.letters[2 * k + 1]! - rack[c]!;
+      if (need > 0) {
+        miss += need;
+        if (miss > maxMissing) break;
+        cost += need * m.price[c]!;
+      }
+    }
+    if (miss <= maxMissing) out.push({ i, cost: cost * m.lambda });
+  }
+  return out;
+}
+
+// Expected best single-target value of `rack` over the sampled futures,
+// plus the same with one extra `extra` letter (if given). Common random
+// numbers make the difference low-variance.
+export function valueRack(
+  d: Dict,
+  rack: Counts,
+  futures: Int16Array[],
+  m: Market,
+  p: Params,
+  extra = -1,
+): { v0: number; v1: number } {
+  const cands = candidates(d, rack, m, p.maxMissing, p.minTargetLen);
+  let sum0 = 0;
+  let sum1 = 0;
+  const lp = extra >= 0 ? m.lambda * m.price[extra]! : 0;
+  for (const f of futures) {
+    let b0 = 0;
+    let b1 = 0;
+    for (const { i, cost } of cands) {
+      const rw = d.reward[i]!;
+      if (rw - cost + lp <= b1 && rw - cost <= b0) continue;
+      const s = d.start[i]!;
+      const e = s + d.nDistinct[i]!;
+      let deficit = 0;
+      let defLetter = -1;
+      let needsExtra = false;
+      for (let k = s; k < e; k++) {
+        const c = d.letters[2 * k]!;
+        const need = d.letters[2 * k + 1]! - rack[c]!;
+        if (need <= 0) continue;
+        if (c === extra) needsExtra = true;
+        const short = need - f[c]!;
+        if (short > 0) {
+          deficit += short;
+          defLetter = c;
+          if (deficit > 1) break;
+        }
+      }
+      const v = rw - cost;
+      if (deficit === 0) {
+        if (v > b0) b0 = v;
+        const v1 = needsExtra ? v + lp : v;
+        if (v1 > b1) b1 = v1;
+      } else if (deficit === 1 && defLetter === extra) {
+        const v1 = v + lp;
+        if (v1 > b1) b1 = v1;
+      }
+    }
+    sum0 += b0;
+    sum1 += Math.max(b0, b1);
+  }
+  const k = futures.length || 1;
+  return { v0: sum0 / k, v1: sum1 / k };
+}
+
+// ---------- The per-match brain ----------
+
+export interface BidInput {
+  letter: number;
+  rack: Counts;
+  balance: number;
+  pool: Counts; // letters not yet revealed (current one excluded) and not ours
+  bagLeft: number; // letters still in the bag after the current one
+  firstPrice: boolean;
+}
+
+export class Brain {
+  d: Dict;
+  p: Params;
+  price: number[];
+  seen: number[]; // observations per letter for the price EMA
+  rand: () => number;
+  totalAuctions: number;
+  lam: number; // paced λ (when paceEta > 0)
+  spentSinceUpdate = 0;
+  auctionsSinceUpdate = 0;
+
+  constructor(p: Partial<Params> = {}, seed = Date.now() & 0xffffffff) {
+    this.d = loadDict();
+    this.p = { ...DEFAULT_PARAMS, ...p };
+    this.price = SEED_PRICE.slice();
+    this.seen = new Array(26).fill(0);
+    this.rand = rng(seed);
+    this.totalAuctions = 68;
+    this.lam = this.p.lam0;
+  }
+
+  // Our own auction outcome: what we paid (0 if we lost).
+  observeSpend(paid: number) {
+    this.spentSinceUpdate += paid;
+    this.auctionsSinceUpdate++;
+  }
+
+  private pace(balance: number, bagLeft: number) {
+    if (this.auctionsSinceUpdate === 0) return;
+    const rho = balance / Math.max(1, bagLeft + 1);
+    const spent = this.spentSinceUpdate / this.auctionsSinceUpdate;
+    const g = (spent - rho) / Math.max(rho, 2);
+    this.lam *= Math.exp(this.p.paceEta * Math.max(-2, Math.min(2, g)) * this.auctionsSinceUpdate);
+    this.lam = Math.max(this.p.lamMin, Math.min(this.p.lamMax, this.lam));
+    this.spentSinceUpdate = 0;
+    this.auctionsSinceUpdate = 0;
+  }
+
+  // Record what a letter actually sold for (Vickrey `paid` = runner-up).
+  observePrice(letter: number, paid: number) {
+    const n = ++this.seen[letter]!;
+    const w = Math.max(0.15, 1 / (n + 2));
+    this.price[letter] = (1 - w) * this.price[letter]! + w * Math.max(paid, 1);
+  }
+
+  lambda(balance: number, bagLeft: number): number {
+    const p = this.p;
+    if (p.paceEta > 0) return this.lam;
+    const frac = Math.max(0, bagLeft) / Math.max(1, this.totalAuctions);
+    const rich = 100 / Math.max(balance, 5);
+    return Math.max(
+      p.lamMin,
+      p.lam0 * Math.pow(frac, p.lamBeta) * Math.pow(rich, p.lamGamma),
+    );
+  }
+
+  market(balance: number, bagLeft: number): Market {
+    return { price: this.price, lambda: this.lambda(balance, bagLeft) };
+  }
+
+  // Letters the remaining bag can still reveal *and* we could still use:
+  // the very last letter arrives as the match ends, so it is never usable.
+  horizon(bagLeft: number) {
+    return Math.min(this.p.horizonCap, Math.max(0, bagLeft - 1));
+  }
+
+  letterValue(inp: BidInput): number {
+    const { rack, letter } = inp;
+    // bagLeft = 0: this is the last auction; its letter arrives as the
+    // match ends and can never be played.
+    if (inp.bagLeft <= 0) return 0;
+    const m = this.market(inp.balance, inp.bagLeft);
+    const futures = sampleFutures(
+      inp.pool,
+      this.horizon(inp.bagLeft),
+      this.p.samples,
+      this.rand,
+      this.p.availProb,
+    );
+    // Price of the letter itself doesn't enter: we're deciding what to pay.
+    const { v0, v1 } = valueRack(this.d, rack, futures, m, this.p, letter);
+    let v = v1 - v0;
+    // Near the end, multi-word dumps matter: count what the letter adds to
+    // the best partition we could play right now.
+    if (inp.bagLeft <= 12) {
+      const with1 = Int16Array.from(rack);
+      with1[letter]++;
+      const a = bestPartition(this.d, rack, 25).total;
+      const b = bestPartition(this.d, with1, 25).total;
+      v = Math.max(v, b - a);
+    }
+    return Math.max(0, v);
+  }
+
+  decideBid(inp: BidInput): number {
+    if (this.p.paceEta > 0) this.pace(inp.balance, inp.bagLeft);
+    const v = this.letterValue(inp);
+    if (v <= 0) return 0;
+    const lam = this.lambda(inp.balance, inp.bagLeft);
+    let bid = v / lam;
+    if (inp.firstPrice) {
+      // Pay-your-bid: shade towards what the runner-up is likely to bid,
+      // but never above value.
+      const market = this.price[inp.letter]! * 1.25 + 1;
+      bid = Math.min(bid * this.p.firstPriceShade, Math.max(market, bid * 0.4));
+    }
+    const cap = inp.bagLeft > 8 ? inp.balance * this.p.bidCapFrac : inp.balance;
+    return Math.max(0, Math.min(Math.floor(bid), Math.floor(cap)));
+  }
+
+  // Words to play now, in order. `final` = the bag is empty and this is
+  // the last chance: play the best partition of everything.
+  choosePlays(
+    rack: Counts,
+    pool: Counts,
+    bagLeft: number,
+    balance: number,
+    final: boolean,
+  ): string[] {
+    const d = this.d;
+    if (final) return bestPartition(d, rack, 150).words;
+    const r = Int16Array.from(rack);
+    const plays: string[] = [];
+    const m = this.market(balance, bagLeft);
+    // Horizon for plans: letters still to come from the bag after now.
+    const h = this.horizon(bagLeft + 1);
+    const futures = sampleFutures(pool, h, this.p.samples, this.rand, this.p.availProb);
+    for (let iter = 0; iter < 4; iter++) {
+      const words = spellable(d, r, 2)
+        .sort((a, b) => d.reward[b]! - d.reward[a]!)
+        .slice(0, 10);
+      if (words.length === 0) break;
+      const hold = valueRack(d, r, futures, m, this.p).v0;
+      let bestGain = this.p.playEps;
+      let bestW = -1;
+      for (const i of words) {
+        const rest = Int16Array.from(r);
+        const s = d.start[i]!;
+        const e = s + d.nDistinct[i]!;
+        for (let k = s; k < e; k++) rest[d.letters[2 * k]!] -= d.letters[2 * k + 1]!;
+        // Money now also buys letters sooner: a little credit for liquidity.
+        const after = d.reward[i]! * (1 + 0.02 * m.lambda) + valueRack(d, rest, futures, m, this.p).v0;
+        const gain = after - hold;
+        if (gain > bestGain) {
+          bestGain = gain;
+          bestW = i;
+        }
+      }
+      if (bestW < 0) break;
+      const s = d.start[bestW]!;
+      const e = s + d.nDistinct[bestW]!;
+      for (let k = s; k < e; k++) r[d.letters[2 * k]!] -= d.letters[2 * k + 1]!;
+      plays.push(d.words[bestW]!);
+    }
+    return plays;
+  }
+}
+
+// Unseen letters from our point of view: the full bag minus every letter
+// auctioned so far (public) minus our own starting rack.
+export function unseenPool(auctioned: Counts, myStart: Counts): Counts {
+  const p = emptyCounts();
+  for (let c = 0; c < 26; c++) p[c] = Math.max(0, BAG[c]! - auctioned[c]! - myStart[c]!);
+  return p;
+}
