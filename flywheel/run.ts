@@ -94,15 +94,21 @@ async function main() {
   // One seat runs the live bot's current settings: the top live bots
   // out-score the fitted field, and a candidate has to beat them too.
   const rival = process.env.FLYWHEEL_NO_RIVAL ? null : incumbent;
-  const n1 = QUICK ? 8 : 40;
+  // The engine's speed changes as the strategy evolves, so stage 2 is
+  // sized from stage 1's measured pace to finish inside the time budget
+  // (default 22 min, so runs 30 min apart don't pile up).
+  const budgetMs = Number(process.env.FLYWHEEL_BUDGET_MIN ?? 22) * 60_000;
+  const n1 = QUICK ? 8 : 32;
   log(`stage 1: ${cands.length} candidates x ${n1} matches`);
+  const tS1 = Date.now();
   const s1 = await evaluate(cands, field, seedsFrom(r() * 1e9, n1), rival);
+  const msPerMatch = (Date.now() - tS1) / (cands.length * n1);
   cands.forEach((c, i) => log(`  [${i}] ${fmt(s1[i]!)}  ${i === 0 ? "(current params.json) " : ""}${knobs(c)}`));
 
   // Stage 2: the incumbent and the two best challengers on fresh seeds.
   const order = s1.map((s, i) => ({ i, s })).filter((x) => x.i > 0).sort((a, b) => a.s.meanRank - b.s.meanRank || b.s.meanScore - a.s.meanScore);
   const finalists = [0, ...order.slice(0, 2).map((x) => x.i)];
-  const n2 = QUICK ? 12 : 200;
+  const n2 = QUICK ? 12 : Math.max(60, Math.min(200, Math.floor((budgetMs - (Date.now() - t0)) / (3 * msPerMatch))));
   log(`stage 2: candidates ${finalists.join(",")} x ${n2} matches`);
   const s2 = await evaluate(finalists.map((i) => cands[i]!), field, seedsFrom(r() * 1e9, n2), rival);
   let bestK = 0;
