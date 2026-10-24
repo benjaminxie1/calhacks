@@ -115,6 +115,14 @@ export interface Params {
   // Cap on a leftover letter's face value in that credit (Q, Z, J, X
   // rarely fit a dump word).
   resCap: number;
+  // When we lose as the runner-up, the price paid is just our own bid (at
+  // a 2-bot table always), a lower bound on the letter's price: record it
+  // as paid × this instead. 1 = off.
+  lostPriceMult: number;
+  // Bid at least seedFloor × the letter's pre-match price on every letter
+  // (paced by coins per auction left), valued or not. Heads-up, a letter we
+  // don't bid on goes to the opponent for 1 coin. 0 = off.
+  seedFloor: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -146,6 +154,8 @@ export const DEFAULT_PARAMS: Params = {
   resW: 0,
   resLate: 0,
   resCap: 99,
+  lostPriceMult: 1,
+  seedFloor: 0,
 };
 
 // mulberry32
@@ -412,6 +422,8 @@ export class Brain {
   totalAuctions: number;
   lam: number; // paced λ (when paceEta > 0)
   spentSinceUpdate = 0;
+  lastBid = -1; // our last bid, to spot results where we were runner-up
+  seedPrice: number[];
   auctionsSinceUpdate = 0;
 
   // `seedPrice` (26 numbers) replaces SEED_PRICE, e.g. from params.json.
@@ -420,6 +432,7 @@ export class Brain {
     this.d = loadDict();
     this.p = { ...DEFAULT_PARAMS, ...rest };
     this.price = seedPrice?.length === 26 ? seedPrice.slice() : SEED_PRICE.slice();
+    this.seedPrice = this.price.slice();
     this.seen = new Array(26).fill(0);
     this.rand = rng(seed);
     this.totalAuctions = 68;
@@ -450,7 +463,8 @@ export class Brain {
   }
 
   // Record what a letter actually sold for (Vickrey `paid` = runner-up).
-  observePrice(letter: number, paid: number) {
+  observePrice(letter: number, paid: number, won?: boolean) {
+    if (won === false && paid > 0 && paid === this.lastBid) paid *= this.p.lostPriceMult;
     const n = ++this.seen[letter]!;
     const w = Math.max(0.15, 1 / (n + 2));
     this.price[letter] = (1 - w) * this.price[letter]! + w * Math.max(paid, 1);
@@ -527,10 +541,12 @@ export class Brain {
   }
 
   decideBid(inp: BidInput): number {
+    this.lastBid = 0;
     if (this.p.paceEta > 0) this.pace(inp.balance, inp.bagLeft);
     let v = this.letterValue(inp);
     if (this.p.denyW > 0 && inp.opps && inp.bagLeft > 0) v += this.p.denyW * this.denyValue(inp.letter, inp.opps);
-    if (v <= 0) return 0;
+    const floor = this.floorBid(inp);
+    if (v <= 0) return (this.lastBid = floor);
     const lam = this.lambda(inp.balance, inp.bagLeft);
     let bid = (v / lam) * (inp.firstPrice ? 1 : this.p.bidMult);
     if (!inp.firstPrice && this.p.bidFloor > 0 && v >= this.p.floorMinV && inp.bagLeft > 0)
@@ -545,7 +561,16 @@ export class Brain {
     if (this.p.rareCap > 0 && LETTER_VALUE[inp.letter]! >= this.p.rareMinFace && inp.bagLeft > this.p.rareUntil * this.totalAuctions)
       bid = Math.min(bid, this.p.rareCap * this.price[inp.letter]!);
     const cap = inp.bagLeft > 8 ? inp.balance * this.p.bidCapFrac : inp.balance;
-    return Math.max(0, Math.min(Math.floor(bid), Math.floor(cap)));
+    return (this.lastBid = Math.max(floor, Math.min(Math.floor(bid), Math.floor(cap))));
+  }
+
+  // See seedFloor. Paced like the live field: scaled by coins per auction
+  // left over 1.6, within 0.5-1.3.
+  floorBid(inp: BidInput): number {
+    if (this.p.seedFloor <= 0 || inp.bagLeft <= 0) return 0;
+    const perAuction = inp.balance / Math.max(1, inp.bagLeft + 1);
+    const pace = Math.min(1.3, Math.max(0.5, perAuction / 1.6));
+    return Math.max(0, Math.min(Math.floor(this.p.seedFloor * this.seedPrice[inp.letter]! * pace), Math.floor(inp.balance)));
   }
 
   // Words to play now, in order. `final` = the bag is empty and this is

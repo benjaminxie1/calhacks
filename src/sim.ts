@@ -339,7 +339,7 @@ export function brainBot(name: string, p: Partial<Params>, seed: number): Player
       return brain.choosePlays(v.rack, unseenPool(v.auctioned, myStart, v.revealed), v.bagLeft, v.balance, final);
     },
     observe(letter, paid, iWon) {
-      brain.observePrice(letter, paid);
+      brain.observePrice(letter, paid, iWon);
       brain.observeSpend(iWon ? paid : 0);
     },
   };

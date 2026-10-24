@@ -705,7 +705,7 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
     log({ type: "result", match: r.matchId, auction: r.auctionId, letter: r.letter, winner: r.winnerBotId ?? null, paid: r.paid, mine: r.winnerBotId === myBotId });
     const b = brains.get(String(r.matchId));
     if (!b) return;
-    b.observePrice(r.letter.charCodeAt(0) - 65, Number(r.paid));
+    b.observePrice(r.letter.charCodeAt(0) - 65, Number(r.paid), r.winnerBotId === myBotId);
     b.observeSpend(r.winnerBotId === myBotId ? Number(r.paid) : 0);
   });
   conn.db.matchState.onUpdate((_c, old, neu) => {
