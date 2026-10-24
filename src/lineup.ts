@@ -3,6 +3,8 @@ import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
 import { potentialBot } from "./potential/seat.js";
 import { allyBot } from "./team.js";
+import * as fs from "node:fs";
+import { fieldBot } from "../flywheel/field.js";
 import { brainBot, fieldModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
@@ -18,6 +20,8 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
     if (kind.startsWith("shark") && kind.length > 5) return sharkModel(d, r, Number(kind.slice(5)) / 10);
     // pot = the potential strategy; POT_PARAMS (JSON) overrides its defaults.
     if (kind === "pot") return potentialBot(`pot${i}`, process.env.POT_PARAMS ? JSON.parse(process.env.POT_PARAMS) : {});
+    // fit = a seat of the field model the flywheel last fitted (flywheel/state.json).
+    if (kind === "fit") return fieldBot(d, JSON.parse(fs.readFileSync(new URL("../flywheel/state.json", import.meta.url), "utf8")).field, r, `fit${i}`);
     switch (kind) {
       case "ally": return allyBot(`ally${i}`, extra, seed0 * 1000 + i, allies, team);
       case "brain": return brainBot(`brain${i}`, extra, seed0 * 1000 + i);
