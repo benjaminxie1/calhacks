@@ -468,7 +468,7 @@ function inOpenLobby(conn: DbConnection): boolean {
 }
 
 function joinLobby(conn: DbConnection) {
-  if (myBotId === null || inMatch(conn) || inOpenLobby(conn)) return;
+  if (myBotId === null || restartPending || inMatch(conn) || inOpenLobby(conn)) return;
   if (waitForAllies(conn)) return;
   lastJoinAt = Date.now();
   if (DRY_RUN) return;
@@ -550,10 +550,13 @@ async function afterMatch(conn: DbConnection) {
           () => false,
           () => true,
         );
-        if (changed && !runningMatches(conn).length) {
-          console.log(`[${BOT_NAME}] code changed, restarting`);
+        if (changed) {
+          // Restart only while free: the watchdog exits once we're in no
+          // match or open lobby, and we stop joining lobbies until then.
+          console.log(`[${BOT_NAME}] code changed, restarting when free`);
           log({ type: "restart", from: before, to: after });
-          process.exit(75);
+          restartPending = true;
+          restartWhenFree(conn);
         }
       }
     } catch (e) {
@@ -659,6 +662,13 @@ DbConnection.builder()
   })
   .build();
 
+let restartPending = false;
+function restartWhenFree(conn: DbConnection) {
+  if (!restartPending || inMatch(conn) || inOpenLobby(conn)) return;
+  console.log(`[${BOT_NAME}] restarting for new code`);
+  process.exit(75);
+}
+
 // Watchdog: the wrapper (scripts/live.sh) restarts us on exit 75.
 setInterval(() => {
   const now = Date.now();
@@ -674,5 +684,6 @@ setInterval(() => {
       log({ type: "stall" });
       process.exit(75);
     }
-  } else if (now - lastJoinAt > 20_000) joinLobby(liveConn);
+  } else if (restartPending) restartWhenFree(liveConn);
+  else if (now - lastJoinAt > 20_000) joinLobby(liveConn);
 }, 5000);
