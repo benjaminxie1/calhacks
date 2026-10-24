@@ -158,6 +158,58 @@ export function fieldModel(d: Dict, r: () => number, level = 1): Player {
   };
 }
 
+// Words of 7-8 letters that `rack` is at most `maxMiss` letters short of.
+function nearLong(d: Dict, rack: Counts, maxMiss: number): number {
+  let n = 0;
+  for (let i = 0; i < d.words.length; i++) {
+    const L = d.len[i]!;
+    if (L < 7 || L > 8) continue;
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    let miss = 0;
+    for (let k = s; k < e && miss <= maxMiss; k++) {
+      const need = d.letters[2 * k + 1]! - rack[d.letters[2 * k]!]!;
+      if (need > 0) miss += need;
+    }
+    if (miss <= maxMiss) n++;
+  }
+  return n;
+}
+
+// A model of today's top live bots (postturing, Chinese Dante, Doppio:
+// ~13-15 letters won, ~170 coins spent, ~90 points, mostly 7-letter words
+// played late). Bids the field level, more on letters that bring a 7-8
+// letter word within reach, holds out for long words and reinvests income.
+export function proModel(d: Dict, r: () => number, level = 1.1): Player {
+  let aggr = 1;
+  return {
+    name: "Pro",
+    start() {
+      aggr = level * (0.85 + 0.3 * r());
+    },
+    bid(v) {
+      if (v.bagLeft <= 0) return 0;
+      let b = FIELD_BID[v.letter]! * aggr * (0.7 + 0.5 * r());
+      const w = Int16Array.from(v.rack);
+      w[v.letter]++;
+      const n0 = nearLong(d, v.rack, 2);
+      const n1 = nearLong(d, w, 2);
+      if (n1 > n0 * 1.3 + 2) b *= 1.5;
+      else if (n1 <= n0) b *= 0.7;
+      const perAuction = v.balance / Math.max(1, v.bagLeft + 1);
+      b *= Math.min(1.4, Math.max(0.6, perAuction / 1.5));
+      return Math.max(0, Math.min(Math.floor(b), v.balance));
+    },
+    plays(v, final) {
+      if (final) return bestPartition(d, v.rack, 60).words;
+      const minLen = v.bagLeft > 25 ? 7 : v.bagLeft > 10 ? 6 : 5;
+      const ws = spellable(d, v.rack, minLen).sort((a, b) => d.reward[b]! - d.reward[a]!);
+      return ws.length ? [d.words[ws[0]!]!] : [];
+    },
+    observe() {},
+  };
+}
+
 // Our bot.
 export function brainBot(name: string, p: Partial<Params>, seed: number): Player {
   let brain: Brain;

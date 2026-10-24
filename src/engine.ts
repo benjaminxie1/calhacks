@@ -87,6 +87,13 @@ export interface Params {
   // Endgame: with this many auctions left, value letters by what they add
   // to the best set of words we can play now.
   endgameN: number;
+  // Scale every Vickrey bid (live data: benx loses ~16 auctions/match by
+  // 2 coins or less). 1 = off.
+  bidMult: number;
+  // A letter worth at least floorMinV points gets a bid of at least
+  // bidFloor × its market price. 0 = off.
+  bidFloor: number;
+  floorMinV: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -107,6 +114,9 @@ export const DEFAULT_PARAMS: Params = {
   lamMarket: 0,
   denyW: 0,
   endgameN: 12,
+  bidMult: 1,
+  bidFloor: 0,
+  floorMinV: 1,
 };
 
 // mulberry32
@@ -467,7 +477,9 @@ export class Brain {
     if (this.p.denyW > 0 && inp.opps && inp.bagLeft > 0) v += this.p.denyW * this.denyValue(inp.letter, inp.opps);
     if (v <= 0) return 0;
     const lam = this.lambda(inp.balance, inp.bagLeft);
-    let bid = v / lam;
+    let bid = (v / lam) * (inp.firstPrice ? 1 : this.p.bidMult);
+    if (!inp.firstPrice && this.p.bidFloor > 0 && v >= this.p.floorMinV && inp.bagLeft > 0)
+      bid = Math.max(bid, this.p.bidFloor * this.price[inp.letter]!);
     if (inp.firstPrice) {
       // Pay-your-bid: shade towards what the runner-up is likely to bid,
       // but never above value.

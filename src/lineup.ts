@@ -2,7 +2,7 @@
 import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
 import { allyBot } from "./team.js";
-import { brainBot, fieldModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
+import { brainBot, fieldModel, proModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
   const d = loadDict();
@@ -23,6 +23,7 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
       case "brainB": return brainBot(`brainB${i}`, extraB, seed0 * 2000 + i);
       case "shark": return sharkModel(d, r, 1);
       case "field": return fieldModel(d, r);
+      case "pro": return proModel(d, r);
       case "starter": return starterBot(d);
       case "cheap": return simBot("Cheapskate", r);
       case "value": return simBot("ValueBidder", r);

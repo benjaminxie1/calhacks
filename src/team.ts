@@ -43,6 +43,9 @@ const SHARED_PARAMS: Params = {
   lamMarket: 0,
   denyW: 0,
   endgameN: 12,
+  bidMult: 1,
+  bidFloor: 0,
+  floorMinV: 1,
 };
 const SHARED_LAMBDA = 0.4;
 const TIE_EPS = 0.5; // points: values this close count as a tie

@@ -7,7 +7,8 @@
     "start": "tsx src/index.ts",
     "sim": "tsx src/run-sim.ts",
     "typecheck": "tsc --noEmit",
-    "flywheel": "tsx flywheel/run.ts"
+    "flywheel": "tsx flywheel/run.ts",
+    "tourney": "tsx scripts/tourney-refit.ts"
   },
   "dependencies": {
     "spacetimedb": "^2.12.0",
