@@ -30,7 +30,9 @@ export const STAGE_PARAMS: Record<Stage, Partial<Params>> = {
   // Heads-up, our value-only bidding let the opponent take most letters
   // for 1 coin (sim vs scout models of Doppio/Nijello/postturing/Karthik:
   // 2-6% wins). A floor bid at the pre-match price on every letter: 60-69%.
-  final: { seedFloor: 1 },
+  // Level (96 matches each, wins at 0.85/1/1.15): Doppio 42/57/74%,
+  // Karthik 40/54/58%, field 74/83/83%, live 99/98/96%; 1.3 was worse.
+  final: { seedFloor: 1.1 },
 };
 
 // Table-size rules, under the stage's own params: the fewer the bots, the
