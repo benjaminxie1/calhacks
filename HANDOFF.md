@@ -173,6 +173,11 @@ rank 3.72 vs 3.12, and score vs the rest of the table 0.0 vs +10.1. It also didn
 more commons early: 9.3 tiles a match vs 11.6, the same 2.7 in the first third, and 37
 coins left vs 27. So `availProb` isn't the lever for the early-buying gap. Reverted.
 
+`rareCap` live, alternated on and off by match (matches 1587-1640, same field for both):
+on 86.2 / rank 2.90 / +12.5 vs the rest of the table over 20 matches, off 83.3 / 3.10 /
++7.8 over 21. That's in the cap's favour but within noise (0.4-0.7 s.e.). It agrees with
+the sim, so it stays on.
+
 ## Next steps, in order
 
 1. **Fix the known valuation flaw.** The trace shows the bot bidding 1–9 on common letters
