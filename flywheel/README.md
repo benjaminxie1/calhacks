@@ -9,7 +9,7 @@ branch between matches. So a committed improvement reaches the running bot
 within one match.
 
 ```sh
-npm run flywheel                 # full run, about 12 min on 4 cores
+npm run flywheel                 # full run, about 20 min on 4 cores
 npm run flywheel -- --quick      # small samples, to check the pipeline (~1 min)
 npm run flywheel -- --dry        # report only, write nothing
 npm run flywheel -- --offline    # reuse flywheel/data/history.json
@@ -34,8 +34,10 @@ Steps:
    that plus the new seed prices, the code defaults, and random 1–3 knob steps from
    the current params. The search space covers every key of `SPACE` that exists in
    `DEFAULT_PARAMS`, so new strategy knobs are picked up automatically once they
-   are listed there. Stage 1 runs 48 matches each. Stage 2 runs the current params plus
-   the top two on 300 fresh paired seeds.
+   are listed there. Each sim lineup is us, one rival seat running the current `params.json`
+   (a stand-in for the top live bots, which out-score the field model), and four field seats.
+   Set `FLYWHEEL_NO_RIVAL=1` to use five field seats instead. Stage 1 runs 40 matches per candidate. Stage 2 runs the current
+   params plus the top two on 200 fresh paired seeds.
 5. If a candidate wins, `run.ts` writes `params.json` and `flywheel/state.json`, which holds the fitted field,
    the observed market and the accepted gain. The scheduled job commits both and pushes them to
    `scrabblebot`.
