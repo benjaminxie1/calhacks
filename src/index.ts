@@ -144,7 +144,25 @@ function loadParams(): FileParams {
   } catch (e) {
     warn(`reading ${PARAMS_FILE}`)(e);
   }
-  return { ...fileParams, ...ENV_PARAMS };
+  return { ...fileParams, ...botParams(), ...ENV_PARAMS };
+}
+
+// params.<bot name, lower case>.json next to params.json: numeric Params
+// for this bot only, on top of params.json. Lets one bot try a change live
+// (an A/B against the others) through git, with no restart.
+const BOT_PARAMS_FILE = path.join(path.dirname(PARAMS_FILE), `params.${BOT_NAME.toLowerCase()}.json`);
+let lastBotParams: Partial<Params> = {};
+function botParams(): Partial<Params> {
+  try {
+    if (!fs.existsSync(BOT_PARAMS_FILE)) return (lastBotParams = {});
+    const raw = JSON.parse(fs.readFileSync(BOT_PARAMS_FILE, "utf8"));
+    const next: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw)) if (k in DEFAULT_PARAMS && typeof v === "number" && Number.isFinite(v)) next[k] = v;
+    lastBotParams = next as Partial<Params>;
+  } catch (e) {
+    warn(`reading ${BOT_PARAMS_FILE}`)(e);
+  }
+  return lastBotParams;
 }
 
 function brainFor(matchId: bigint): Brain {

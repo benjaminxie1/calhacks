@@ -94,6 +94,15 @@ export interface Params {
   // bidFloor × its market price. 0 = off.
   bidFloor: number;
   floorMinV: number;
+  // Before the last stretch of the bag, cap bids on letters of face value
+  // >= rareMinFace at rareCap × market price (live: benx spends its early
+  // budget on J/Q/X/Z while top bots buy them late). 0 = off.
+  rareCap: number;
+  rareMinFace: number;
+  rareUntil: number; // the cap applies while bagLeft > rareUntil × auctions
+  // Cap every Vickrey bid at mktCap × market price (with bidFloor this
+  // imitates the top live bots: win bid ≈ 1.15-1.3× market). 0 = off.
+  mktCap: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -117,6 +126,10 @@ export const DEFAULT_PARAMS: Params = {
   bidMult: 1,
   bidFloor: 0,
   floorMinV: 1,
+  rareCap: 0,
+  rareMinFace: 8,
+  rareUntil: 0.33,
+  mktCap: 0,
 };
 
 // mulberry32
@@ -492,6 +505,9 @@ export class Brain {
       const market = this.price[inp.letter]! * 1.25 + 1;
       bid = Math.min(bid * this.p.firstPriceShade, Math.max(market, bid * 0.4));
     }
+    if (!inp.firstPrice && this.p.mktCap > 0 && inp.bagLeft > 0) bid = Math.min(bid, this.p.mktCap * this.price[inp.letter]!);
+    if (this.p.rareCap > 0 && LETTER_VALUE[inp.letter]! >= this.p.rareMinFace && inp.bagLeft > this.p.rareUntil * this.totalAuctions)
+      bid = Math.min(bid, this.p.rareCap * this.price[inp.letter]!);
     const cap = inp.bagLeft > 8 ? inp.balance * this.p.bidCapFrac : inp.balance;
     return Math.max(0, Math.min(Math.floor(bid), Math.floor(cap)));
   }

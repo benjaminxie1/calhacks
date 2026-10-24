@@ -46,6 +46,10 @@ const SHARED_PARAMS: Params = {
   bidMult: 1,
   bidFloor: 0,
   floorMinV: 1,
+  rareCap: 0,
+  rareMinFace: 8,
+  rareUntil: 0.33,
+  mktCap: 0,
 };
 const SHARED_LAMBDA = 0.4;
 const TIE_EPS = 0.5; // points: values this close count as a tie
