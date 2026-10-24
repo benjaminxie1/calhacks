@@ -9,6 +9,7 @@
 #   BOTS            bot names (default benx,PathAndLight,polarbear)
 #   <NAME>_TOKEN    token per bot, name uppercased (BENX_TOKEN). Missing = use saved .token-<name>.
 #   ALLIES, TEAM_CAPTAIN, TEAM_RELAY   passed through to every bot
+#   SOLO=1          no team play: every bot plays for itself (overrides the three above)
 #   WORK_DIR        where the clones live (default ./bots next to this repo, /data in the container)
 #   REPO_URL        default https://github.com/benjaminxie1/calhacks
 #   FLYWHEEL_GITHUB_TOKEN    optional: enables the flywheel loop, which pushes params.json
@@ -21,8 +22,13 @@ BOTS=${BOTS:-benx,PathAndLight,polarbear}
 WORK_DIR=${WORK_DIR:-$here/bots}
 REPO_URL=${REPO_URL:-https://github.com/benjaminxie1/calhacks}
 BRANCH=${PULL_BRANCH:-scrabblebot}
-export ALLIES=${ALLIES:-benx,PathAndLight,polarbear}
-export TEAM_CAPTAIN=${TEAM_CAPTAIN:-benx}
+if [ "${SOLO:-0}" = 1 ]; then
+  unset ALLIES TEAM_CAPTAIN TEAM_RELAY
+  echo "[run-all] SOLO=1: team play off"
+else
+  export ALLIES=${ALLIES:-benx,PathAndLight,polarbear}
+  export TEAM_CAPTAIN=${TEAM_CAPTAIN:-benx}
+fi
 export LIVE_AUTOPULL=${LIVE_AUTOPULL:-1}
 mkdir -p "$WORK_DIR"
 
