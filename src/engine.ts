@@ -87,6 +87,11 @@ export interface Params {
   // Endgame: with this many auctions left, value letters by what they add
   // to the best set of words we can play now.
   endgameN: number;
+  // Play out the best set of words once bagLeft <= flushAt. 0 waits for
+  // the last auction, whose 1 s window then has to fit the round trip;
+  // 1 plays out an auction earlier and again in the last one. In the
+  // sim, 1 costs 0.1 points a match (81.0 vs 80.9 over 96 paired matches).
+  flushAt: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -107,6 +112,7 @@ export const DEFAULT_PARAMS: Params = {
   lamMarket: 0,
   denyW: 0,
   endgameN: 12,
+  flushAt: 1,
 };
 
 // mulberry32
@@ -488,7 +494,7 @@ export class Brain {
     final: boolean,
   ): string[] {
     const d = this.d;
-    if (final) return bestPartition(d, rack, 150).words;
+    if (final || bagLeft <= this.p.flushAt) return bestPartition(d, rack, 150).words;
     const r = Int16Array.from(rack);
     const plays: string[] = [];
     const m = this.market(balance, bagLeft);
