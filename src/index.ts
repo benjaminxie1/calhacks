@@ -28,7 +28,7 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
-import { Brain, DEFAULT_PARAMS, countsOf, emptyCounts, unseenPool, type Counts, type Params } from "./engine.js";
+import { Brain, DEFAULT_PARAMS, countsOf, emptyCounts, unseenPool, type Counts, type Opp, type Params } from "./engine.js";
 import { BAG } from "./dict.js";
 import { Relay } from "./relay.js";
 import { DEFAULT_TEAM, teamBid, type Mate, type TeamConfig } from "./team.js";
@@ -172,6 +172,34 @@ function auctionedFor(conn: DbConnection, matchId: bigint): Counts {
   return a;
 }
 
+// Each opponent's public view (letters won minus letters played, plus
+// balance and score), and the hidden starting tiles their plays have shown
+// (played beyond won), which will never come up for auction. The sim gives
+// the brain both; without them the live bot counted those tiles as unseen.
+function oppViewFor(conn: DbConnection, matchId: bigint): { opps: Opp[]; revealed: Counts } {
+  const opps: Opp[] = [];
+  const revealed = emptyCounts();
+  for (const p of conn.db.matchParticipant.iter()) {
+    if (p.matchId !== matchId || p.botId === myBotId) continue;
+    const won = emptyCounts();
+    const played = emptyCounts();
+    for (const r of conn.db.auctionResult.iter())
+      if (r.matchId === matchId && r.winnerBotId === p.botId) won[r.letter.charCodeAt(0) - 65]++;
+    for (const w of conn.db.wordPlay.iter())
+      if (w.matchId === matchId && w.botId === p.botId) {
+        const c = countsOf(w.word);
+        for (let i = 0; i < 26; i++) played[i] += c[i]!;
+      }
+    const known = emptyCounts();
+    for (let i = 0; i < 26; i++) {
+      known[i] = Math.max(0, won[i]! - played[i]!);
+      revealed[i] += Math.max(0, played[i]! - won[i]!);
+    }
+    opps.push({ known, balance: Number(p.balance), score: Number(p.score) });
+  }
+  return { opps, revealed };
+}
+
 // Our starting rack = rack now + letters we've played - letters we've won.
 function startRackFor(conn: DbConnection, matchId: bigint): Counts {
   const s = rackFor(conn, matchId);
@@ -251,13 +279,15 @@ function tryBid(
   brain.p.samples = samples;
   let amount = 0;
   try {
+    const { opps, revealed } = oppViewFor(conn, matchId);
     amount = brain.decideBid({
       letter: letter.charCodeAt(0) - 65,
       rack: rackFor(conn, matchId),
       balance,
-      pool: unseenPool(auctionedFor(conn, matchId), startRackFor(conn, matchId)),
+      pool: unseenPool(auctionedFor(conn, matchId), startRackFor(conn, matchId), revealed),
       bagLeft: m.bagTotal,
       firstPrice: m.auctionType.tag === "FirstPrice",
+      opps,
     });
   } finally {
     brain.p.samples = full;
@@ -433,7 +463,7 @@ function playWords(conn: DbConnection, matchId: bigint, final: boolean) {
   lastRack.set(k, rk);
   const words = brainFor(matchId).choosePlays(
     rack,
-    unseenPool(auctionedFor(conn, matchId), startRackFor(conn, matchId)),
+    unseenPool(auctionedFor(conn, matchId), startRackFor(conn, matchId), oppViewFor(conn, matchId).revealed),
     m.bagTotal,
     balance,
     final || m.bagTotal === 0,
