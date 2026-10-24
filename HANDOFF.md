@@ -167,7 +167,11 @@ letter cash-ins) scored only 42-46, so the strong live bots need a better model.
 94.8 / rank 1.78 against 93.8 / 1.88 without it (`brain,brainB,fit,fit,fit,fit`, 64 paired
 matches, brainB = params.json), and it is in params.json now. Buying common letters
 earlier through `availProb` 0.15 scored worse in the sim (88.4 / 2.16), which conflicts
-with the live data. That one needs a live A/B, not the sim.
+with the live data, so it was tried live: 29 matches with it vs 41 with the cap alone,
+over the same night's field. It was worse live too: score 76.1 vs 85.3 (−9.2, 2.2 s.e.),
+rank 3.72 vs 3.12, and score vs the rest of the table 0.0 vs +10.1. It also didn't buy
+more commons early: 9.3 tiles a match vs 11.6, the same 2.7 in the first third, and 37
+coins left vs 27. So `availProb` isn't the lever for the early-buying gap. Reverted.
 
 ## Next steps, in order
 
