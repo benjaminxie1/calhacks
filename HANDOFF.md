@@ -20,7 +20,7 @@ https://github.com/clockworklabs/scrabblebot and the live match history.
 2. Create a team at `/team/new`. On `/team`, click **Generate token**. The token is shown once.
 3. Run the bot:
    ```sh
-   git clone https://github.com/benjaminxie1/scrabblebot && cd scrabblebot && npm install
+   git clone -b scrabblebot --single-branch https://github.com/benjaminxie1/calhacks scrabblebot && cd scrabblebot && npm install
    BOT_NAME=<name> BOT_TOKEN=<token> npm start            # casual lobby matches (builds ELO)
    BOT_NAME=<name> TOURNAMENT_ID=<id> npm start            # tournament; id shown on /tournament
    ```
