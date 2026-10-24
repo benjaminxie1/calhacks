@@ -94,6 +94,55 @@ LetterShark bids about 12–20 on common letters and 35–45 on J/X/Q/Z. It play
   outbid each other and the moderate shark model wins. **The best λ depends on the field.**
 - Adaptive pacing with `paceEta` set to 0.05 or 0.15 did not beat fixed λ yet.
 
+## Checks against a second bot and the real module (Jonathan, Oct 23)
+
+Jonathan built a separate bot in parallel. Its strategy is now the `pot` seat in the
+bench (`src/potential/`). Its approach: a letter is worth what it adds to the summed
+reward × completion chance of the best few target words, with no sampling. Everything
+below is 64–96 paired matches in `src/bench.ts` unless it says otherwise.
+
+- **The sim matches the module.** `verify/real-module.test.ts` plays the brain through
+  the module's own test harness (real reducers, the seeded sims). At ec24c1d it scored
+  278.7 avg over 12 matches, against 271.9 in the sim for the same lineup. After a8115f2
+  plus `flushAt` 1 it scored 289.3. Every word was accepted, including last-auction plays.
+  See `verify/README.md`.
+- **Node 18 couldn't connect.** The SDK needs a WebSocket, which Node has built in only
+  from 22. Added `undici@6`.
+- **The brain beats `pot`:**
+
+  | lineup | brain | pot |
+  |---|---|---|
+  | `pot,brain,field,field,field,field` | 81.9, rank 2.02 | 78.1, rank 2.48 |
+  | `pot,brain,shark,shark13,shark,shark13` | 98.0, rank 2.04 | 80.9, rank 2.69 |
+  | `pot,brain,shark,field,shark13,field` | 84.7, rank 2.19 | 76.7, rank 2.70 |
+  | same, first-price | 84.6, rank 1.80 | 72.0, rank 2.91 |
+  | `brain,pot,shark,field` (4 players) | 127.8, rank 1.98 | 111.3, rank 2.27 |
+
+  Bidding `pot` harder made it worse (66–74). It's 10–25x faster, though (next bullet).
+- **Speed.** With a 19-tile rack near the end, on a loaded machine, `choosePlays` took
+  300–500 ms and `decideBid` up to ~200 ms; `pot` took 2–28 ms. Bids go out before plays
+  and samples shrink with the time left, so the bid itself is covered. The risk is a long
+  play search pushing back the next auction's bid. A cheap fallback for a short budget
+  would close that.
+- **Brain settings tried** (`brain,shark,field,shark13,field,brainB`; only brain0 changes):
+
+  | change | brain0 | brainB5 |
+  |---|---|---|
+  | none | 81.0 | 81.3 |
+  | `flushAt` 1 (now the default) | 80.9 | 81.2 |
+  | `lamBeta` 1.5 / 2 | 72.1 / 69.5 | 81.9 / 83.2 |
+  | `endgameN` 20 | 79.3 | 81.8 |
+  | `denyW` 0.3 / 0.7 | 75.3 / 61.7 | 81.1 / 86.3 |
+  | first-price, `firstPriceShade` 0.6 / 0.75 / 0.9 | 82.5 / 82.3 / 82.3 | 82.4 / 81.4 / 81.0 |
+  | `lam0` 0.3 (default 0.4) | 77.6 | 84.8 |
+
+  Denial hurts at both weights. First-price is fine at the default shade.
+- **Open: small tables.** At 4 players (`brain,shark,field,brainB`), the field model
+  roughly ties the brain: field 120.5 vs brain 113.4 / 118.0. The brain ends with 38–45
+  coins unspent. Lower λ (`lam0` 0.2–0.3) and higher `availProb` (0.35, 0.45) made it worse
+  (99–108). If tournament tables are smaller than 6, this is the gap to look at. One
+  lead: `totalAuctions` is fixed at 68, but a 4-player match has 77 auctions.
+
 ## Next steps, in order
 
 1. **Fix the known valuation flaw.** The trace shows the bot bidding 1–9 on common letters
@@ -106,7 +155,8 @@ LetterShark bids about 12–20 on common letters and 35–45 on J/X/Q/Z. It play
    or retune `paceEta`.
 3. Denial: work out opponents' racks from public wins minus their played words. Bid up
    letters that would complete a high-value word for them. Only rank matters in the
-   tournament.
-4. For first-price tournaments, check `firstPriceShade` with `FIRST_PRICE=1`.
+   tournament. (Tried at `denyW` 0.3 and 0.7: both worse. See the checks above.)
+4. For first-price tournaments, check `firstPriceShade` with `FIRST_PRICE=1`. (Done:
+   0.6–0.9 all score about the same, so the default 0.75 is fine.)
 5. Run it live in casual lobbies before Saturday. Watch the bid timing in the logs: the
    bid has to land inside the 1 s window.
