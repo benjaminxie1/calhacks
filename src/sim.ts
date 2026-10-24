@@ -7,6 +7,7 @@
 import { BAG, LETTER_VALUE, loadDict, type Dict } from "./dict.js";
 import {
   Brain,
+  OppTracker,
   bestPartition,
   countsOf,
   emptyCounts,
@@ -15,6 +16,7 @@ import {
   total,
   unseenPool,
   type Counts,
+  type Opp,
   type Params,
 } from "./engine.js";
 
@@ -25,6 +27,8 @@ export interface View {
   bagLeft: number; // after drawing the current letter
   firstPrice: boolean;
   auctioned: Counts; // every letter revealed so far, current included
+  opps: Opp[]; // public view of the other seats
+  revealed: Counts; // opponents' hidden starting tiles their plays exposed
 }
 
 export interface Player {
@@ -163,16 +167,17 @@ export function brainBot(name: string, p: Partial<Params>, seed: number): Player
         letter: v.letter,
         rack: v.rack,
         balance: v.balance,
-        pool: unseenPool(v.auctioned, myStart),
+        pool: unseenPool(v.auctioned, myStart, v.revealed),
         bagLeft: v.bagLeft,
         firstPrice: v.firstPrice,
+        opps: v.opps,
       });
     },
     plays(v, final) {
       const key = v.rack.join(",");
       if (!final && key === lastRackKey) return [];
       lastRackKey = key;
-      return brain.choosePlays(v.rack, unseenPool(v.auctioned, myStart), v.bagLeft, v.balance, final);
+      return brain.choosePlays(v.rack, unseenPool(v.auctioned, myStart, v.revealed), v.bagLeft, v.balance, final);
     },
     observe(letter, paid, iWon) {
       brain.observePrice(letter, paid);
@@ -216,12 +221,14 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
   players.forEach((p, i) => p.start(Int16Array.from(racks[i]!), n));
   const auctioned = emptyCounts();
   const log: Result["log"] = [];
+  const pub = players.map(() => new OppTracker());
 
   const play = (i: number, word: string) => {
     if (!d.lexSet.has(word)) return;
     const need = countsOf(word);
     for (let c = 0; c < 26; c++) if (need[c]! > racks[i]![c]!) return;
     for (let c = 0; c < 26; c++) racks[i]![c] -= need[c]!;
+    pub[i]!.addPlay(word);
     let base = 0;
     for (const ch of word) base += LETTER_VALUE[ch.charCodeAt(0) - 65]!;
     const L = word.length;
@@ -229,14 +236,19 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
     bal[i] += rw;
     score[i] += rw;
   };
-  const view = (i: number, letter: number): View => ({
-    rack: Int16Array.from(racks[i]!),
-    balance: bal[i]!,
-    letter,
-    bagLeft: bagTotal,
-    firstPrice,
-    auctioned,
-  });
+  const view = (i: number, letter: number): View => {
+    const opps: Opp[] = [];
+    const revealed = emptyCounts();
+    pub.forEach((t, j) => {
+      if (j === i) return;
+      t.balance = bal[j]!;
+      t.score = score[j]!;
+      opps.push(t.view());
+      const rv = t.revealed();
+      for (let c = 0; c < 26; c++) revealed[c] += rv[c]!;
+    });
+    return { rack: Int16Array.from(racks[i]!), balance: bal[i]!, letter, bagLeft: bagTotal, firstPrice, auctioned, opps, revealed };
+  };
   const realPlays = (letter: number, final: boolean) => {
     players.forEach((p, i) => {
       if (p.isSim) return;
@@ -258,6 +270,7 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
       if (bal[winner]! >= paid) {
         bal[winner] -= paid;
         racks[winner]![letter]++;
+        pub[winner]!.addWin(letter);
       } else winner = -1;
     }
     log.push({ letter: letter!, paid: winner >= 0 ? paid : 0, top: live[0]?.a ?? 0, winner });

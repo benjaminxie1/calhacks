@@ -103,7 +103,7 @@ export const DEFAULT_PARAMS: Params = {
   bidCapFrac: 1.0,
   paceEta: 0,
   lamMax: 3,
-  availProb: 0.4,
+  availProb: 0.3,
   lamMarket: 0,
   denyW: 0,
   endgameN: 12,
