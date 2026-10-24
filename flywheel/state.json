@@ -1,0 +1,301 @@
+{
+  "updatedAt": "2026-10-24T07:14:09.086Z",
+  "observed": {
+    "matches": 150,
+    "since": "2026-10-24T05:36:12.373Z",
+    "paidByLetter": [
+      10.4,
+      15.6,
+      17,
+      13.3,
+      11,
+      18.1,
+      12.1,
+      19.6,
+      10.1,
+      25.3,
+      21.4,
+      10.7,
+      16.6,
+      10.3,
+      10,
+      16.2,
+      24.1,
+      10.9,
+      12.3,
+      9.9,
+      9.4,
+      16.5,
+      16.6,
+      27.3,
+      19.2,
+      31.8
+    ],
+    "topByLetter": [
+      15,
+      20.9,
+      22.7,
+      18.3,
+      15.9,
+      23.7,
+      17.1,
+      26.6,
+      14.6,
+      34.5,
+      29.5,
+      15.2,
+      22.3,
+      14.3,
+      14.5,
+      21,
+      35.4,
+      15.3,
+      17.5,
+      14.1,
+      15.2,
+      21.5,
+      22,
+      36.4,
+      25.6,
+      43.7
+    ],
+    "paidByStage": [
+      13.9,
+      12.4,
+      11.7
+    ],
+    "noSaleLate": 0.018000000000000002,
+    "meanScore": 72.8,
+    "winScore": 109,
+    "bots": [
+      {
+        "name": "polarbear",
+        "n": 1,
+        "score": 102,
+        "rank": 1
+      },
+      {
+        "name": "mexicanpepper",
+        "n": 7,
+        "score": 84.7,
+        "rank": 1.86
+      },
+      {
+        "name": "james",
+        "n": 15,
+        "score": 94.9,
+        "rank": 2.07
+      },
+      {
+        "name": "Chinese Dante",
+        "n": 47,
+        "score": 96.9,
+        "rank": 2.13
+      },
+      {
+        "name": "slow-n-dumb",
+        "n": 40,
+        "score": 89.1,
+        "rank": 2.48
+      },
+      {
+        "name": "YeziShanYang",
+        "n": 37,
+        "score": 91.7,
+        "rank": 2.49
+      },
+      {
+        "name": "benx",
+        "n": 33,
+        "score": 83.2,
+        "rank": 2.76
+      },
+      {
+        "name": "marcellinus",
+        "n": 29,
+        "score": 80.1,
+        "rank": 2.9
+      },
+      {
+        "name": "LetterShark",
+        "n": 58,
+        "score": 83.6,
+        "rank": 2.97
+      },
+      {
+        "name": "LexOracle",
+        "n": 3,
+        "score": 77,
+        "rank": 3
+      },
+      {
+        "name": "coconut",
+        "n": 3,
+        "score": 75.7,
+        "rank": 3
+      },
+      {
+        "name": "code",
+        "n": 48,
+        "score": 79.9,
+        "rank": 3.02
+      },
+      {
+        "name": "cashu",
+        "n": 51,
+        "score": 81,
+        "rank": 3.04
+      },
+      {
+        "name": "keanu_reeves",
+        "n": 55,
+        "score": 80.8,
+        "rank": 3.18
+      },
+      {
+        "name": "ChoiCube84",
+        "n": 9,
+        "score": 73.8,
+        "rank": 3.33
+      },
+      {
+        "name": "podzemski",
+        "n": 52,
+        "score": 78.5,
+        "rank": 3.35
+      },
+      {
+        "name": "scrabbler",
+        "n": 39,
+        "score": 77.2,
+        "rank": 3.44
+      },
+      {
+        "name": "LUCENT",
+        "n": 55,
+        "score": 71.6,
+        "rank": 3.56
+      },
+      {
+        "name": "PathAndLight",
+        "n": 17,
+        "score": 80.4,
+        "rank": 3.76
+      },
+      {
+        "name": "SookraBot",
+        "n": 31,
+        "score": 66.8,
+        "rank": 3.77
+      },
+      {
+        "name": "MagnusBot",
+        "n": 30,
+        "score": 69,
+        "rank": 3.83
+      },
+      {
+        "name": "scrappybot",
+        "n": 24,
+        "score": 61.7,
+        "rank": 3.88
+      },
+      {
+        "name": "bot",
+        "n": 28,
+        "score": 61,
+        "rank": 4.04
+      },
+      {
+        "name": "tinytung",
+        "n": 43,
+        "score": 59.8,
+        "rank": 4.12
+      },
+      {
+        "name": "TileShark",
+        "n": 31,
+        "score": 52.5,
+        "rank": 4.42
+      },
+      {
+        "name": "SkyScrabble",
+        "n": 44,
+        "score": 55.6,
+        "rank": 4.82
+      },
+      {
+        "name": "Lex Maxima",
+        "n": 2,
+        "score": 57,
+        "rank": 5
+      },
+      {
+        "name": "jawn",
+        "n": 17,
+        "score": 35.5,
+        "rank": 5.29
+      },
+      {
+        "name": "adi",
+        "n": 29,
+        "score": 28.8,
+        "rank": 5.45
+      },
+      {
+        "name": "0x3f",
+        "n": 22,
+        "score": 25,
+        "rank": 5.59
+      }
+    ]
+  },
+  "field": {
+    "level": [
+      14,
+      22.9,
+      25.3,
+      18.8,
+      15.1,
+      26.1,
+      17.2,
+      29.4,
+      13.8,
+      41,
+      31.2,
+      15,
+      25.3,
+      14,
+      13.5,
+      25.3,
+      39.4,
+      15.2,
+      16.8,
+      13.3,
+      12.7,
+      23.3,
+      24.5,
+      46.1,
+      27.4,
+      50
+    ],
+    "stage": [
+      0.719,
+      0.85,
+      1.955
+    ],
+    "seatSd": 0.3,
+    "playMinLen": 8
+  },
+  "lastAccepted": {
+    "at": "2026-10-24T07:14:09.086Z",
+    "gain": 0.29868,
+    "se": 0.10656278111797755,
+    "meanRank": 1.945,
+    "meanScore": 95.05,
+    "was": {
+      "meanRank": 2.24,
+      "meanScore": 91.37
+    }
+  }
+}
