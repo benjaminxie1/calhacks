@@ -24,7 +24,13 @@ https://github.com/clockworklabs/scrabblebot and the live match history.
    BOT_NAME=<name> BOT_TOKEN=<token> npm start            # casual lobby matches (builds ELO)
    BOT_NAME=<name> TOURNAMENT_ID=<id> npm start            # tournament; id shown on /tournament
    ```
-   The bot saves the token to `.token-<name>`, so later runs don't need `BOT_TOKEN`. Only the
+   The bot saves the token to `.token-<name>`, so later runs don't need `BOT_TOKEN`.
+   For unattended runs use `BOT_NAME=<name> scripts/live.sh`: it restarts the bot after a
+   crash, disconnect or code update and pulls `origin/scrabblebot` between matches.
+   Params come from `params.json` (re-read at each new match, written by the flywheel),
+   then `PARAMS` env on top. Every bid, result, play and match end is appended to
+   `runs/live-<date>.jsonl`. `DRY_RUN=1 BOT_ID=<id>` shadows another bot's matches
+   without a token, to check timing. Only the
    bot process can register for a tournament, so it must be running while registration is open.
 
 ## Game facts that drive the strategy (read from `spacetimedb/src/game.ts`)

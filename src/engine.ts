@@ -316,10 +316,12 @@ export class Brain {
   spentSinceUpdate = 0;
   auctionsSinceUpdate = 0;
 
-  constructor(p: Partial<Params> = {}, seed = Date.now() & 0xffffffff) {
+  // `seedPrice` (26 numbers) replaces SEED_PRICE, e.g. from params.json.
+  constructor(p: Partial<Params> & { seedPrice?: number[] } = {}, seed = Date.now() & 0xffffffff) {
+    const { seedPrice, ...rest } = p;
     this.d = loadDict();
-    this.p = { ...DEFAULT_PARAMS, ...p };
-    this.price = SEED_PRICE.slice();
+    this.p = { ...DEFAULT_PARAMS, ...rest };
+    this.price = seedPrice?.length === 26 ? seedPrice.slice() : SEED_PRICE.slice();
     this.seen = new Array(26).fill(0);
     this.rand = rng(seed);
     this.totalAuctions = 68;
