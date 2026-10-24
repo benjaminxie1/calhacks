@@ -14,6 +14,8 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
   return kinds.map((kind, i) => {
     // brainL0.1 = a brain with fixed λ0 = 0.1
     if (kind.startsWith("brainL")) return brainBot(kind + i, { ...extraB, lam0: Number(kind.slice(6)) }, seed0 * 3000 + i);
+    // field12 = a field bot 1.2x as aggressive
+    if (kind.startsWith("field") && kind.length > 5) return fieldModel(d, r, Number(kind.slice(5)) / 10);
     if (kind.startsWith("shark") && kind.length > 5) return sharkModel(d, r, Number(kind.slice(5)) / 10);
     switch (kind) {
       case "ally": return allyBot(`ally${i}`, extra, seed0 * 1000 + i, allies, team);

@@ -62,10 +62,16 @@ export interface TeamConfig {
   captain?: number;
   captainMin?: number;
   drain?: number;
+  // Captain mode: supporters bid only the drain level, never their own
+  // full value, so they don't outbid the captain on letters the public
+  // estimate misses (its hidden starting tiles).
+  supportOnly?: boolean;
 }
 // drain 0.8: best captain result in sim (108/match vs 76 solo; 1.2 drained
 // the field harder but the captain scored less).
-export const DEFAULT_TEAM: TeamConfig = { overrideK: 2, overrideMin: 4, captainMin: 0.5, drain: 0.8 };
+// supportOnly: captain 111 -> 118 points (rank 1.28 vs 1.33, within noise) in
+// 64 paired sims with 3 allies + 3 field bots; supporters fall from 35 to 15.
+export const DEFAULT_TEAM: TeamConfig = { overrideK: 2, overrideMin: 4, captainMin: 0.5, drain: 0.8, supportOnly: true };
 
 // What every ally can see of one ally.
 export interface Mate {
@@ -132,7 +138,8 @@ export function teamBid(
     const [capV] = sharedValues(d, letter, [cap], pool, bagLeft, key);
     if (capV! >= (cfg.captainMin ?? 0.5)) return { bid: 0, decision: { bidder: cap.id, shared: [capV!], sitOut: true } };
     const drainBid = bagLeft > 0 ? Math.floor((cfg.drain ?? 0) * price) : 0;
-    return { bid: Math.min(Math.floor(balance), Math.max(myBid, drainBid)), decision: { bidder: me, shared: [capV!], sitOut: false } };
+    const sup = cfg.supportOnly ? drainBid : Math.max(myBid, drainBid);
+    return { bid: Math.min(Math.floor(balance), sup), decision: { bidder: me, shared: [capV!], sitOut: false } };
   }
   if (myBid <= 0) return { bid: myBid };
   const sorted = mates.slice().sort((a, b) => a.id - b.id);
