@@ -1,0 +1,20 @@
+# SYNTHETIC year-end CAM reconciliation, seeded with known errors (see answer_key.yaml).
+landlord: Mission Plaza Holdings LLC
+tenant: Golden Wok Kitchen, Inc.
+year: 2025
+statement_date: "2026-04-15"
+tenant_share_billed_pct: 8.20   # landlord divided by occupied area (29,268 sf), not GLA
+estimates_paid: 31200.00         # 12 x $2,600 monthly estimates
+prior_year_controllable_total: 180000.00
+lines:
+  - {id: L1, description: Landscaping, amount: 22000.00, category: controllable}
+  - {id: L2, description: Parking lot sweeping and repair, amount: 31000.00, category: controllable}
+  - {id: L3, description: Security patrol, amount: 40000.00, category: controllable}
+  - {id: L4, description: Repairs and maintenance, amount: 72000.00, category: controllable}
+  - {id: L5, description: Janitorial, amount: 40000.00, category: controllable}
+  - {id: L6, description: Common area utilities, amount: 38000.00, category: utilities}
+  - {id: L7, description: Property and liability insurance, amount: 41000.00, category: insurance}
+  - {id: L8, description: Roof replacement, amount: 60000.00, category: repairs}
+  - {id: L9, description: Rooftop HVAC unit replacement (unit 3), amount: 14000.00, category: repairs}
+  - {id: L10, description: Real estate taxes, amount: 48000.00, category: taxes}
+  - {id: L11, description: Management fee (15% of all of the above), amount: 60900.00, category: admin_fee}

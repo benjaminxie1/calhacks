@@ -1,0 +1,16 @@
+{
+  "_note": "SYNTHETIC cached result in the shape the Apify county-records Actor returns. Replace with a live run.",
+  "source": "cache",
+  "apn": "428-0061-012-03",
+  "county": "Alameda",
+  "tax_year": "2025-26",
+  "assessed_land": 1150000,
+  "assessed_improvements": 1520000,
+  "total_tax_billed": 31000.00,
+  "installments": [
+    {"due": "2025-12-10", "amount": 15500.00, "status": "paid"},
+    {"due": "2026-04-10", "amount": 15500.00, "status": "paid"}
+  ],
+  "url": null,
+  "fetched_at": null
+}

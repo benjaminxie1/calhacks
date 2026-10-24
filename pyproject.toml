@@ -13,7 +13,7 @@ dependencies = ["anthropic", "droid-sdk[mcp]", "pyyaml", "pydantic", "python-dot
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
-include = ["proven*"]
+include = ["proven*", "cam*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "cam/tests"]
