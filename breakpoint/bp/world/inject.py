@@ -11,6 +11,7 @@ from bp.models import AnswerKeyRow, Execution, LedgerTxn, Posting
 from bp.money import D, cents, s
 from bp.world.generate import FEES, World, acct_key, compute_fee, fee_schedule_on
 
+NO_REPLY = {"ACC-0052"}  # mirrors bp.agents.outreach.NO_REPLY
 COUNTS = {"B1": 6, "B2": 6, "B3": 4, "B4": 3, "H2": 10}
 
 
@@ -182,5 +183,8 @@ def inject(w: World) -> None:
             expected_fix=[{"action": "reverse_deposit", "amounts": {"amount": s(tr.amount)}},
                           {"action": "book_receivable", "amounts": {"amount": s(deficit)}},
                           {"action": "request_funds"}],
-            expected_final_status="completed", first_status="needs_human",
-            note=f"R01 return of {tr.amount} after shares were bought"))
+            expected_final_status="needs_human" if tr.account_id in NO_REPLY else "completed",
+            first_status="needs_human",
+            note=f"R01 return of {tr.amount} after shares were bought"
+                 + ("; client never answers the cash call, so the controller decides on liquidation"
+                    if tr.account_id in NO_REPLY else "")))

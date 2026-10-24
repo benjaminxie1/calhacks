@@ -63,6 +63,25 @@ class Replay:
         for r in conn.execute(select(injections)):
             self.store.apply_injection(r.id, r.records)
 
+    def inject(self, kind: str, account_id: str, symbol: str, on: date | None = None) -> dict:
+        """Plant a break that lands in the next replay day (judge-driven, R26)."""
+        from bp.world.live import build
+
+        done = self.last_done()
+        on = on or (calendar.next_bd(done) if done else calendar.START)
+        with self.eng.begin() as c:
+            seq = c.execute(select(injections.c.id)).all()
+            inj_id = f"INJ-{len(seq) + 1:03d}"
+            recs = build(self.store, kind, account_id, symbol, on, len(seq) + 1)
+            c.execute(injections.insert().values(id=inj_id, effective_on=on, spec={"type": kind, "account_id": account_id,
+                                                                                   "symbol": symbol}, records=recs,
+                                                 answer_key=recs["answer_key"]))
+            emit(c, "judge", "break_injected", f"{kind} on {account_id} {symbol}, lands {on}",
+                 inputs={"injection": inj_id, "order": recs["orders"][0]["order_id"]}, sim_date=on)
+        self.store.apply_injection(inj_id, recs)
+        return {"injection": inj_id, "effective_on": on.isoformat(), "order_id": recs["orders"][0]["order_id"],
+                "answer_key": recs["answer_key"][0]}
+
     # ------------------------------------------------------------------ the daily loop
     def run_day(self, d: date) -> dict:
         t0 = time.time()

@@ -329,6 +329,10 @@ class Workflow:
         return {"teach_session": tid, "draft": {"id": pb.id, "version": pb.version}}
 
     def approve_playbook(self, conn, pid: str, version: int, approver: str, d: date, reason: str) -> None:
+        if approver != approvals.CONTROLLER:  # new playbooks need the controller (R17); the learner never activates
+            emit(conn, approver, "approval_denied", "only the controller approves playbooks",
+                 inputs={"playbook": pid, "version": version}, sim_date=d)
+            raise approvals.PolicyViolation(f"{approver} may not approve playbooks")
         pb = pbstore.get(conn, pid, version)
         body = pb.dump()
         for b in body["branches"]:
@@ -345,6 +349,15 @@ class Workflow:
         if reopened:
             emit(conn, "workflow", "cases_reopened", f"{pid} v{version} is active; re-investigating {len(reopened)} case(s)",
                  inputs={"cases": reopened}, sim_date=d)
+
+    def override(self, conn, case_id: str, by: str, note: str, d: date) -> None:
+        """A human resolves a matched case differently: the playbook is flagged for revision (R22)."""
+        case = dict(conn.execute(select(cases).where(cases.c.case_id == case_id)).mappings().one())
+        if case["playbook_id"]:
+            pbstore.set_status(conn, case["playbook_id"], case["playbook_version"], "flagged", by,
+                               f"overridden on {case_id}: {note}", d)
+        self._set(conn, case, d, status="needs_human", pending_actions=[], actor=by,
+                  note=f"{by} overrode the playbook: {note}")
 
     # ------------------------------------------------------------------ scripted people (demo mode)
     def scripted_controller(self, conn, d: date) -> None:

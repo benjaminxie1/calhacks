@@ -41,6 +41,12 @@ class BranchCheck(BaseModel):
     explanation: str
 
 
+def match_branches(pb, facts: dict) -> list[str]:
+    """Branches whose condition holds. Conditions see only the playbook's context facts (R19)."""
+    visible = {k: v for k, v in facts.items() if k in pb.context}
+    return [b.id for b in pb.branches if conditions.evaluate(b.when, visible)]
+
+
 class Investigator:
     name = "investigator"
 
@@ -63,8 +69,7 @@ class Investigator:
         matched_ids = set()
         per_break = {}
         for bid, f in facts.items():
-            visible = {k: v for k, v in f.items() if k in pb.context}  # branches read only context facts
-            hits = [b.id for b in pb.branches if conditions.evaluate(b.when, visible)]
+            hits = match_branches(pb, f)
             per_break[bid] = hits
             matched_ids |= set(hits)
             if len(hits) > 1:
