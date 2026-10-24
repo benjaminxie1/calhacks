@@ -147,7 +147,7 @@ export const DEFAULT_PARAMS: Params = {
   denyW: 0,
   endgameN: 12,
   bidMult: 1,
-  bidFloor: 0,
+  bidFloor: 0.9,
   floorMinV: 1,
   rareCap: 0,
   rareMinFace: 8,
