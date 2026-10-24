@@ -153,7 +153,7 @@ export const DEFAULT_PARAMS: Params = {
   rareMinFace: 8,
   rareUntil: 0.33,
   mktCap: 0,
-  liqW: 0.02,
+  liqW: 0.1,
   resW: 0,
   resLate: 0,
   resCap: 99,
