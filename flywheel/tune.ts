@@ -24,7 +24,7 @@ export const SPACE: Record<string, { lo: number; hi: number; int?: boolean; log?
   lamMarket: { lo: 0, hi: 1.5 },
   denyW: { lo: 0, hi: 0.6 },
   endgameN: { lo: 6, hi: 20, int: true },
-  bidMult: { lo: 1, hi: 1.5 },
+  bidMult: { lo: 1, hi: 1.8 },
   bidFloor: { lo: 0, hi: 1.5 },
   floorMinV: { lo: 0.3, hi: 3 },
 };
