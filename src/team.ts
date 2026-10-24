@@ -50,6 +50,10 @@ const SHARED_PARAMS: Params = {
   rareMinFace: 8,
   rareUntil: 0.33,
   mktCap: 0,
+  liqW: 0.02,
+  resW: 0,
+  resLate: 0,
+  resCap: 99,
 };
 const SHARED_LAMBDA = 0.4;
 const TIE_EPS = 0.5; // points: values this close count as a tie

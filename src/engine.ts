@@ -103,6 +103,18 @@ export interface Params {
   // Cap every Vickrey bid at mktCap × market price (with bidFloor this
   // imitates the top live bots: win bid ≈ 1.15-1.3× market). 0 = off.
   mktCap: number;
+  // Play policy: credit for playing a word now, as a share of λ × reward
+  // (the reward is also coins that buy letters in later auctions).
+  liqW: number;
+  // Rack letters a plan doesn't use still score in the final dump: count
+  // them at resW × face value.
+  resW: number;
+  // Scale resW by (share of the bag already drawn)^resLate: leftovers are
+  // only sure to end up in the dump late in the match. 0 = flat.
+  resLate: number;
+  // Cap on a leftover letter's face value in that credit (Q, Z, J, X
+  // rarely fit a dump word).
+  resCap: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -130,6 +142,10 @@ export const DEFAULT_PARAMS: Params = {
   rareMinFace: 8,
   rareUntil: 0.33,
   mktCap: 0,
+  liqW: 0.02,
+  resW: 0,
+  resLate: 0,
+  resCap: 99,
 };
 
 // mulberry32
@@ -233,6 +249,7 @@ export function bestWord(d: Dict, rack: Counts): number {
 export interface Market {
   price: number[]; // expected coins to win each letter
   lambda: number; // score per coin
+  resW?: number; // weight on rack letters a plan leaves over
 }
 
 // Draw `h` letters without replacement from `pool`, `k` times.
@@ -264,7 +281,10 @@ export function sampleFutures(
 interface Cand {
   i: number;
   cost: number; // λ * price of letters missing from the rack
+  used: number; // face value of the rack letters the word uses
 }
+
+const resFace = (c: number, cap: number) => Math.min(LETTER_VALUE[c]!, cap);
 
 function candidates(
   d: Dict,
@@ -272,6 +292,7 @@ function candidates(
   m: Market,
   maxMissing: number,
   minLen: number,
+  resCap = 99,
 ): Cand[] {
   const out: Cand[] = [];
   const n = d.words.length;
@@ -283,16 +304,19 @@ function candidates(
     const e = s + d.nDistinct[i]!;
     let miss = 0;
     let cost = 0;
+    let used = 0;
     for (let k = s; k < e; k++) {
       const c = d.letters[2 * k]!;
-      const need = d.letters[2 * k + 1]! - rack[c]!;
+      const want = d.letters[2 * k + 1]!;
+      const need = want - rack[c]!;
+      used += Math.min(want, rack[c]!) * resFace(c, resCap);
       if (need > 0) {
         miss += need;
         if (miss > maxMissing) break;
         cost += need * m.price[c]!;
       }
     }
-    if (miss <= maxMissing) out.push({ i, cost: cost * m.lambda });
+    if (miss <= maxMissing) out.push({ i, cost: cost * m.lambda, used });
   }
   return out;
 }
@@ -308,16 +332,21 @@ export function valueRack(
   p: Params,
   extra = -1,
 ): { v0: number; v1: number } {
-  const cands = candidates(d, rack, m, p.maxMissing, p.minTargetLen);
+  const cands = candidates(d, rack, m, p.maxMissing, p.minTargetLen, p.resCap);
   let sum0 = 0;
   let sum1 = 0;
   const lp = extra >= 0 ? m.lambda * m.price[extra]! : 0;
+  const rw0 = m.resW ?? p.resW;
+  let face = 0;
+  for (let c = 0; c < 26; c++) face += rack[c]! * resFace(c, p.resCap);
+  const fx = extra >= 0 ? resFace(extra, p.resCap) * rw0 : 0;
+  const res0 = rw0 * face;
   for (const f of futures) {
-    let b0 = 0;
-    let b1 = 0;
-    for (const { i, cost } of cands) {
-      const rw = d.reward[i]!;
-      if (rw - cost + lp <= b1 && rw - cost <= b0) continue;
+    let b0 = res0;
+    let b1 = res0 + fx;
+    for (const { i, cost, used } of cands) {
+      const rw = d.reward[i]! + rw0 * (face - used);
+      if (rw - cost + lp + fx <= b1 && rw - cost <= b0) continue;
       const s = d.start[i]!;
       const e = s + d.nDistinct[i]!;
       let deficit = 0;
@@ -338,7 +367,9 @@ export function valueRack(
       const v = rw - cost;
       if (deficit === 0) {
         if (v > b0) b0 = v;
-        const v1 = needsExtra ? v + lp : v;
+        // With the extra letter: it fills a gap (no residual), or sits in
+        // the residual.
+        const v1 = needsExtra ? v + lp : v + fx;
         if (v1 > b1) b1 = v1;
       } else if (deficit === 1 && defLetter === extra) {
         const v1 = v + lp;
@@ -438,7 +469,12 @@ export class Brain {
   }
 
   market(balance: number, bagLeft: number): Market {
-    return { price: this.price, lambda: this.lambda(balance, bagLeft) };
+    const drawn = 1 - Math.max(0, bagLeft) / Math.max(1, this.totalAuctions);
+    return {
+      price: this.price,
+      lambda: this.lambda(balance, bagLeft),
+      resW: this.p.resW * Math.pow(Math.min(1, Math.max(0, drawn)), this.p.resLate),
+    };
   }
 
   // Letters the remaining bag can still reveal *and* we could still use:
@@ -543,7 +579,7 @@ export class Brain {
         const e = s + d.nDistinct[i]!;
         for (let k = s; k < e; k++) rest[d.letters[2 * k]!] -= d.letters[2 * k + 1]!;
         // Money now also buys letters sooner: a little credit for liquidity.
-        const after = d.reward[i]! * (1 + 0.02 * m.lambda) + valueRack(d, rest, futures, m, this.p).v0;
+        const after = d.reward[i]! * (1 + this.p.liqW * m.lambda) + valueRack(d, rest, futures, m, this.p).v0;
         const gain = after - hold;
         if (gain > bestGain) {
           bestGain = gain;

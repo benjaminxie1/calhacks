@@ -2,7 +2,7 @@
 import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
 import { allyBot } from "./team.js";
-import { brainBot, fieldModel, proModel, scoutModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
+import { brainBot, fieldModel, liveModel, proModel, scoutModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
   const d = loadDict();
@@ -26,6 +26,7 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
       case "shark": return sharkModel(d, r, 1);
       case "field": return fieldModel(d, r);
       case "pro": return proModel(d, r);
+      case "live": return liveModel(d, r, process.env.LIVE_STAGE ? JSON.parse(process.env.LIVE_STAGE) : undefined, Number(process.env.LIVE_BOOST ?? 1.3), Number(process.env.LIVE_BONUS ?? 80));
       case "starter": return starterBot(d);
       case "cheap": return simBot("Cheapskate", r);
       case "value": return simBot("ValueBidder", r);

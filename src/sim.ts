@@ -43,6 +43,9 @@ export interface View {
 export interface Player {
   name: string;
   isSim?: boolean;
+  // Extra starting coins: lets an opponent model spend like a live bot
+  // whose word income it doesn't fully earn.
+  startBonus?: number;
   start(rack: Counts, nPlayers: number): void;
   bid(v: View): number;
   // Called after every auction (and at the final auction's open with
@@ -254,6 +257,57 @@ export function scoutModel(d: Dict, r: () => number, who: string): Player {
   };
 }
 
+// The market as seen from one seat in today's live lobbies (matches from
+// id 1250 on, fitted 2026-10-24 12:30 UTC). From any seat the highest
+// competing bid is public: the price paid when that seat won, the archived
+// top bid when it lost. Each seat here bids LIVE_LEVEL[letter] ×
+// LIVE_STAGE[sixth of the match] × a lognormal seat factor (sd per sixth)
+// × U(0.6, 1.3); level, stage and sd are fitted so that the max of five
+// seats matches the live median and 90th percentile per letter and sixth.
+// Live, the last sixth is the most spread out (q10 8, q90 32): some bots
+// are out of money or interest, others spend down.
+const LIVE_LEVEL = [
+  9, 13, 14.2, 11, 9.4, 15, 10.3, 16.6, 8.5, 21.5, 17.3, 8.8, 13.6, 8.8, 8.5, 13.2, 20.4, 9.2, 9.9, 8.8,
+  8.5, 14.1, 14.5, 24.4, 16, 28.4,
+];
+const LIVE_STAGE = [1.068, 1.027, 0.966, 0.985, 1.165, 1.461];
+const LIVE_SD = [0.325, 0.251, 0.327, 0.386, 0.332, 0.539];
+export function liveModel(d: Dict, r: () => number, stage = LIVE_STAGE, boost = 1.3, bonus = 80, minLen = 6): Player {
+  let z = 0;
+  let lastKey = "";
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+  return {
+    name: "Live",
+    startBonus: bonus,
+    start() {
+      z = gauss();
+      lastKey = "";
+    },
+    bid(v) {
+      if (v.bagLeft <= 0) return 0;
+      const k = Math.min(5, Math.floor((6 * (67 - v.bagLeft)) / 68));
+      // Seat factor: half fixed per match, half fresh per auction.
+      const e = Math.SQRT1_2 * (z + gauss());
+      let b = LIVE_LEVEL[v.letter]! * stage[k]! * Math.exp(LIVE_SD[k]! * e) * (0.6 + 0.7 * r());
+      // Like real bots, pay up for a letter that completes a new word.
+      const w = Int16Array.from(v.rack);
+      w[v.letter]++;
+      if (spellable(d, w, 6).length > spellable(d, v.rack, 6).length) b *= boost;
+      return Math.max(0, Math.min(Math.floor(b), v.balance));
+    },
+    plays(v, final) {
+      if (final) return bestPartition(d, v.rack, 40).words;
+      const key = v.rack.join(",");
+      if (key === lastKey) return [];
+      lastKey = key;
+      const L = v.bagLeft > 30 ? minLen : 5;
+      const ws = spellable(d, v.rack, L).sort((a, b) => d.reward[b]! - d.reward[a]!);
+      return ws.length ? [d.words[ws[0]!]!] : [];
+    },
+    observe() {},
+  };
+}
+
 // Our bot.
 export function brainBot(name: string, p: Partial<Params>, seed: number): Player {
   let brain: Brain;
@@ -320,7 +374,7 @@ export function playMatch(players: Player[], seed: number, firstPrice = false, r
   };
   const n = players.length;
   const racks = players.map(() => emptyCounts());
-  const bal = players.map(() => 100);
+  const bal = players.map((p) => 100 + (p.startBonus ?? 0));
   const score = players.map(() => 0);
   for (let i = 0; i < n; i++) for (let k = 0; k < rackSize; k++) racks[i]![draw()!]++;
   players.forEach((p, i) => p.start(Int16Array.from(racks[i]!), n));
