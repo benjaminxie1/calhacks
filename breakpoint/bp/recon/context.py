@@ -42,7 +42,9 @@ def facts_for(conn, matcher: M.Matcher, b: dict, d: date) -> dict:
     if key == M.K_CASH:
         acts = [a for a in src("custodian").custodian_cash_activity(date.fromisoformat(str(b["detected_on"])))
                 if a.account_id == b["account_id"]]
-        divs = [a for a in acts if a.kind == "dividend"]
+        from bp.agents.core import ledger_refs
+        booked = ledger_refs(conn, [a.ref for a in acts if a.kind == "dividend"])
+        divs = [a for a in acts if a.kind == "dividend" and a.ref not in booked]
         return {
             "cash_shortfall": -D(b["vals"]["unexplained"]),
             "dividend_paid": bool(divs), "dividend_amount": sum((a.amount for a in divs), D(0)) if divs else None,

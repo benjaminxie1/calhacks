@@ -50,9 +50,14 @@ class Executor:
         out = []
         act = body["action"]
         if act["type"] == "journal_entry":
+            settle = d
+            for ref in body.get("references") or []:
+                orig = ledger.entry(conn, ref)
+                if orig and orig["settle_date"] > settle:
+                    settle = orig["settle_date"]  # a correction settles with the entry it corrects
             txn, created = ledger.post(
                 conn, self._cred, txn_id=f"FIX-{pid}", idempotency_key=f"proposal:{pid}", effective_date=d,
-                settle_date=d, kind="correction", source_ref=body["source_ref"],
+                settle_date=settle, kind="correction", source_ref=body["source_ref"],
                 reason=f"{act['template']}: {body['memo'][:200]}", actor=ACTOR, postings=body["postings"],
                 references_txn=(body.get("references") or [None])[0], proposal_id=pid,
                 meta={"template": act["template"], "case_id": row["case_id"]})

@@ -175,8 +175,9 @@ class Preparer:
             det = _d(b["detected_on"])
             cust = self.m.src("custodian")
             out = []
+            booked = ledger_refs(conn, [a.ref for a in cust.custodian_cash_activity(det)])
             for a in cust.custodian_cash_activity(det):
-                if a.account_id != b["account_id"] or a.kind != "dividend":
+                if a.account_id != b["account_id"] or a.kind != "dividend" or a.ref in booked:
                     continue
                 ca = next(c for c in self.m.src("reference").corporate_actions_asof(det)
                           if c.symbol == a.symbol and c.type == "dividend" and c.pay_date == det)
@@ -224,7 +225,7 @@ class Preparer:
             def offline():
                 return Memo(memo=f"{action_name} for {case['case_id']}: calculator {g['calculator']} on "
                                  f"{g['source_ref']}; moves ${s(out['amount_usd'])} of client cash"
-                                 + (f" ({', '.join(f'{k} {s(v)}' for k, v in out['info'].items() if not isinstance(v, dict))})"
+                                 + (f" ({', '.join(f'{k} {s(v) if isinstance(v, Decimal) else v}' for k, v in out['info'].items() if not isinstance(v, dict))})"
                                     if out["info"] else "") + ".")
             memo, _ = llm.decide("preparer", "Write a one-paragraph memo for the approver describing this correcting "
                                  "entry and why. Cite the calculator by name; do not restate or alter any amount.",
@@ -237,6 +238,13 @@ class Preparer:
                 source_ref=g["source_ref"], playbook=pb, memo=memo.memo, prepared_by=self.name)
             pids.append(approvals.create(conn, p, d))
         return pids
+
+
+def ledger_refs(conn, refs: list[str]) -> set[str]:
+    if not refs:
+        return set()
+    return set(conn.execute(text("SELECT DISTINCT source_ref FROM ledger_entries WHERE source_ref = ANY(:r)"),
+                            {"r": refs}).scalars())
 
 
 def _d(x) -> date:

@@ -86,6 +86,17 @@ class Matcher:
             for dl in r.deltas:
                 if date.fromisoformat(dl["from"]) <= asof:
                     out[(dl["account_id"], dl["asset"])] += D(dl["amount"])
+        # corrections already posted for cases still in progress have moved the ledger toward the trusted view
+        q = text("""
+            SELECT split_part(l.account, ':', 2) AS acct, l.asset, sum(l.amount) AS amt
+            FROM ledger_entries e JOIN ledger_lines l ON l.txn_id = e.txn_id
+            JOIN proposals p ON p.proposal_id = e.proposal_id JOIN cases c ON c.case_id = p.case_id
+            WHERE c.status NOT IN ('completed', 'auto_cleared') AND l.account LIKE 'client:%'
+              AND e.settle_date <= :d AND (CAST(:ex AS text) IS NULL OR c.case_id NOT IN (
+                  SELECT case_id FROM breaks WHERE break_id = CAST(:ex AS text) AND case_id IS NOT NULL))
+            GROUP BY 1, 2""")
+        for r in conn.execute(q, {"d": asof, "ex": exclude}):
+            out[(r.acct, r.asset)] += r.amt
         return out
 
     # ------------------------------------------------------------------ transaction level

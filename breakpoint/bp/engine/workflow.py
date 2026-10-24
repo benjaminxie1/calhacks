@@ -366,7 +366,8 @@ class Workflow:
             lesson = SCRIPTED_LESSONS.get(case["break_key"])
             taught = conn.execute(select(teach_sessions.c.id).where(teach_sessions.c.case_id == case["case_id"])).first()
             draft = pbstore.for_key(conn, case["break_key"], "draft")
-            if not lesson or taught or draft:
+            active = pbstore.for_key(conn, case["break_key"], "active")
+            if not lesson or taught or draft or active:
                 continue
             self.teach(conn, case["case_id"], teacher="Dana Ortiz", d=d, **lesson)
             did = True
