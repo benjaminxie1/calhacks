@@ -50,7 +50,7 @@ export function perturb(base: ParamSet, r: () => number, scale = 1): ParamSet {
 export interface Score { meanRank: number; meanScore: number; ranks: number[]; scores: number[] }
 
 // Runs every (candidate, seeds) pair across a pool of child processes.
-export async function evaluate(cands: ParamSet[], field: FieldModel, seeds: number[], rival: ParamSet | null, workers = os.cpus().length): Promise<Score[]> {
+export async function evaluate(cands: ParamSet[], field: FieldModel, seeds: number[], rival: ParamSet | null, workers = Number(process.env.FLYWHEEL_WORKERS) || Math.max(1, os.cpus().length - 2)): Promise<Score[]> {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const chunk = Math.max(2, Math.ceil(seeds.length / Math.max(1, Math.ceil((workers * 2) / cands.length))));
   const jobs: Job[] = [];
