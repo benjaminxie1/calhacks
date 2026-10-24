@@ -63,7 +63,9 @@ export interface TeamConfig {
   captainMin?: number;
   drain?: number;
 }
-export const DEFAULT_TEAM: TeamConfig = { overrideK: 2, overrideMin: 4 };
+// drain 0.8: best captain result in sim (108/match vs 76 solo; 1.2 drained
+// the field harder but the captain scored less).
+export const DEFAULT_TEAM: TeamConfig = { overrideK: 2, overrideMin: 4, captainMin: 0.5, drain: 0.8 };
 
 // What every ally can see of one ally.
 export interface Mate {

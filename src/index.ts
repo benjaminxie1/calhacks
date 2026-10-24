@@ -263,12 +263,13 @@ function tryBid(
     brain.p.samples = full;
   }
   let team: Record<string, unknown> | undefined;
-  const mates = relay && allyIds.size ? matesFor(conn, matchId, opensAt.toMillis()) : undefined;
+  const captain = allyIds.size ? captainId() : undefined;
+  const mates = allyIds.size && (relay || captain !== undefined) ? matesFor(conn, matchId, opensAt.toMillis(), captain !== undefined) : undefined;
   if (mates) {
     if (mates.mates.length >= 2) {
       const solo = amount;
       const li = letter.charCodeAt(0) - 65;
-      const cfg = { ...DEFAULT_TEAM, ...TEAM_CFG, captain: captainId() };
+      const cfg = { ...DEFAULT_TEAM, ...TEAM_CFG, captain };
       const r = teamBid(brain.d, Number(myBotId), amount, brain.lambda(balance, m.bagTotal), li, mates.mates, mates.pool, m.bagTotal, Number(auctionId), cfg, brain.price[li], balance);
       amount = r.bid;
       if (r.decision) team = { solo, bidder: r.decision.bidder, sitOut: r.decision.sitOut, shared: r.decision.shared.map((x) => +x.toFixed(1)) };
@@ -308,8 +309,10 @@ function captainId(): number | undefined {
 // played, balance rebuilt from the results and the plays made before then
 // (so a play racing the auction can't make allies disagree). Also the pool
 // shared by all of them. No mates until every ally in the match holds
-// everyone's starting tiles.
-function matesFor(conn: DbConnection, matchId: bigint, opensAt: bigint): { mates: Mate[]; pool: Counts } {
+// everyone's starting tiles, except in captain mode, which then works
+// from public tiles alone (supporters only need to know what the captain
+// can use, and the sim shows that is enough).
+function matesFor(conn: DbConnection, matchId: bigint, opensAt: bigint, captainMode = false): { mates: Mate[]; pool: Counts } {
   const known = new Map<bigint, { won: Counts; played: Counts; balance: number }>();
   const side = (id: bigint) => {
     let x = known.get(id);
@@ -331,20 +334,19 @@ function matesFor(conn: DbConnection, matchId: bigint, opensAt: bigint): { mates
     x.balance += Number(w.totalReward);
   }
   const team = [...known.keys()].filter((id) => id === myBotId || allyIds.has(id));
-  const starts = team.length >= 2 ? relay?.ready(String(matchId), team.map(String)) : undefined;
+  const starts = team.length < 2 ? undefined : (relay?.ready(String(matchId), team.map(String)) ?? (captainMode ? new Map<string, string>() : undefined));
   if (!starts) return { mates: [], pool: emptyCounts() };
   // Hidden tiles out of the bag: allies' starting racks, plus whatever
   // the other bots' plays have exposed.
   const gone = emptyCounts();
   const mates: Mate[] = [];
   for (const [id, x] of known) {
-    const s = team.includes(id) ? countsOf(starts.get(String(id))!) : undefined;
+    const s = team.includes(id) ? countsOf(starts.get(String(id)) ?? "") : undefined;
     const k = emptyCounts();
     for (let i = 0; i < 26; i++) {
-      if (s) {
-        k[i] = Math.max(0, s[i]! + x.won[i]! - x.played[i]!);
-        gone[i] += s[i]!;
-      } else gone[i] += Math.max(0, x.played[i]! - x.won[i]!);
+      if (s) k[i] = Math.max(0, s[i]! + x.won[i]! - x.played[i]!);
+      // Hidden tiles we know: shared starting tiles, else what plays exposed.
+      gone[i] += s && starts.has(String(id)) ? s[i]! : Math.max(0, x.played[i]! - x.won[i]!);
     }
     if (s) mates.push({ id: Number(id), known: k, balance: x.balance });
   }
