@@ -4,7 +4,8 @@
 // First run:  BOT_NAME=<name> BOT_TOKEN=<token from /team> npm start
 // Later runs: BOT_NAME=<name> npm start   (token saved to .token-<name>)
 // Unattended: BOT_NAME=<name> scripts/live.sh  (restarts, pulls updates)
-// Tournament: add TOURNAMENT_ID=<id>
+// Tournaments: registers for any open one automatically (TOURNAMENT_ID=<id>
+//             limits it to one, NO_TOURNAMENTS=1 disables)
 // Tuning:     params.json (re-read at each new match), then PARAMS='{"lam0":0.3}'
 //             on top. Both are partial engine Params; params.json may also
 //             carry "seedPrice": [26 numbers].
@@ -239,7 +240,7 @@ function tryBid(
   const ms = Date.now() - t0;
   const left = close - Date.now();
   console.log(
-    `[${BOT_NAME}] m${matchId} bag${m.bagTotal} '${letter}' bid ${amount} (bal ${balance}, ${ms}ms, lag ${lag}ms, ~${left}ms left${samples < full ? `, ${samples} samples` : ""})`,
+    `[${BOT_NAME}] m${matchId} bag${m.bagTotal} '${letter}' bid ${amount} (bal ${balance}, ${ms}ms, lag ${lag}ms, ~${Math.round(left)}ms left${samples < full ? `, ${samples} samples` : ""})`,
   );
   const ev = { type: "bid", match: matchId, auction: auctionId, letter, bag: m.bagTotal, balance, amount, ms, lag, left, samples };
   const sent = Date.now();
@@ -317,12 +318,32 @@ function joinLobby(conn: DbConnection) {
   conn.reducers.joinLobby({}).catch(warn("joining the lobby"));
 }
 
-function bootstrap(conn: DbConnection) {
-  if (TOURNAMENT_ID && !DRY_RUN)
+// Sign up for every tournament that opens registration (or only
+// TOURNAMENT_ID if set). Set NO_TOURNAMENTS=1 to opt out.
+const registering = new Set<string>();
+function registerTournaments(conn: DbConnection) {
+  if (DRY_RUN || myBotId === null || process.env.NO_TOURNAMENTS === "1") return;
+  for (const t of conn.db.tournament.iter()) {
+    const k = String(t.id);
+    if (t.status.tag !== "Registration" || registering.has(k)) continue;
+    if (TOURNAMENT_ID && k !== TOURNAMENT_ID) continue;
+    if (Array.from(conn.db.tournamentEntry.iter()).some((e) => e.tournamentId === t.id && e.botId === myBotId)) continue;
+    registering.add(k);
     conn.reducers
-      .registerForTournament({ tournamentId: BigInt(TOURNAMENT_ID) })
-      .then(() => console.log(`[${BOT_NAME}] registered for tournament ${TOURNAMENT_ID}`))
-      .catch(warn("tournament registration"));
+      .registerForTournament({ tournamentId: t.id })
+      .then(() => {
+        console.log(`[${BOT_NAME}] registered for tournament ${k} (${t.auctionType.tag})`);
+        log({ type: "tournament_registered", tournament: t.id, auctionType: t.auctionType.tag });
+      })
+      .catch((e) => {
+        registering.delete(k);
+        warn(`registering for tournament ${k}`)(e);
+      });
+  }
+}
+
+function bootstrap(conn: DbConnection) {
+  registerTournaments(conn);
   for (const p of conn.db.matchParticipant.iter()) if (p.botId === myBotId) subscribeMatch(conn, p.matchId);
   joinLobby(conn);
 }
@@ -409,6 +430,8 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
           "SELECT * FROM lobby",
           "SELECT * FROM match_state",
           "SELECT * FROM my_rack",
+          "SELECT * FROM tournament",
+          `SELECT * FROM tournament_entry WHERE bot_id = ${myBotId}`,
         ]);
     })
     .subscribe(["SELECT * FROM bot_credential", "SELECT * FROM bot"]);
@@ -421,6 +444,8 @@ function onConnect(conn: DbConnection, identity: Identity, token: string) {
   conn.db.auction.onUpdate(touch);
   conn.db.myRack.onInsert((_c, h) => (touch(), queuePlays(conn, h.matchId)));
   conn.db.myRack.onUpdate((_c, _o, h) => (touch(), queuePlays(conn, h.matchId)));
+  conn.db.tournament.onInsert(() => registerTournaments(conn));
+  conn.db.tournament.onUpdate(() => registerTournaments(conn));
   conn.db.matchParticipant.onInsert((_c, p) => {
     if (p.botId === myBotId) subscribeMatch(conn, p.matchId);
   });
