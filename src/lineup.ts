@@ -1,6 +1,7 @@
 // Seat kinds shared by run-sim and bench.
 import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
+import { potentialBot } from "./potential/seat.js";
 import { brainBot, fieldModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
@@ -12,6 +13,8 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
     // brainL0.1 = a brain with fixed λ0 = 0.1
     if (kind.startsWith("brainL")) return brainBot(kind + i, { ...extraB, lam0: Number(kind.slice(6)) }, seed0 * 3000 + i);
     if (kind.startsWith("shark") && kind.length > 5) return sharkModel(d, r, Number(kind.slice(5)) / 10);
+    // pot = the potential strategy; POT_PARAMS (JSON) overrides its defaults.
+    if (kind === "pot") return potentialBot(`pot${i}`, process.env.POT_PARAMS ? JSON.parse(process.env.POT_PARAMS) : {});
     switch (kind) {
       case "brain": return brainBot(`brain${i}`, extra, seed0 * 1000 + i);
       case "brainB": return brainBot(`brainB${i}`, extraB, seed0 * 2000 + i);
