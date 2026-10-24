@@ -27,8 +27,20 @@ python -m venv .venv && .venv/bin/pip install anthropic pydantic pyyaml pytest
 .venv/bin/python -m cam.run                                # offline readers, sample data
 .venv/bin/python -m cam.run --reader claude                # needs ANTHROPIC_API_KEY in .env
 .venv/bin/python -m cam.run --rule L9=exclude_capital      # owner answers the open question
+.venv/bin/python -m cam.run --room --droid                 # mirror to the dispute room, Droid reviews the letter
+.venv/bin/python -m cam.edgar --max 5                      # real retail leases from SEC EDGAR via our Apify Actor
+.venv/bin/python -m cam.fetch_agent                        # chat agent on Agentverse / ASI:One
 .venv/bin/pytest -q cam/tests
 ```
+
+## Sponsor pieces
+
+| Piece | Where | What it does in the audit |
+| --- | --- | --- |
+| Apify Actor | `actors/edgar-lease-finder` | Searches SEC EDGAR full text for retail leases filed as exhibits and quotes their CAM clauses (share, cap, admin fee, capital, taxes, audit right). `apify push` from that folder |
+| SpacetimeDB | `spacetime/` module, `cam/room.py` | The dispute room: audit, findings and every trail step land live; the tenant answers open questions by calling the `rule` reducer and the next run picks the answer up. `spacetime publish` from `spacetime/` |
+| Fetch.ai | `cam/fetch_agent.py` | uAgent speaking the chat protocol, connected to an Agentverse mailbox with `AGENTVERSE_API_KEY` |
+| Factory Droid | `cam/droid_review.py` | `droid exec` in read-only mode checks every figure and clause in the letter against `result.json` and the lease |
 
 ## Real vs simulated (as of Sat Oct 24, morning)
 
@@ -38,7 +50,7 @@ python -m venv .venv && .venv/bin/pip install anthropic pydantic pyyaml pytest
 | Reconciliation statement | Synthetic, seeded with 5 known errors and 1 ambiguous line (`data/sample/answer_key.yaml`) |
 | County tax record | Cached result in the Actor's output shape until the Apify Actor is live |
 | Claude path | Written, not yet run (no API key in the build environment) |
-| SpacetimeDB, Fetch.ai, Factory Droid | Not built yet |
+| SpacetimeDB, Fetch.ai, Factory Droid, EDGAR Actor | Built and tested locally (SpacetimeDB against a local server, the Actor against live EDGAR); going live as keys arrive |
 
 The sample result: landlord bills $38,285.80 and says $7,085.80 is due; the lease says
 $24,127.50, so the tenant is owed a $7,072.50 credit, plus $1,050.00 awaiting the owner's call.

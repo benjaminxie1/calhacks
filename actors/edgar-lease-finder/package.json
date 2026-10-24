@@ -1,0 +1,9 @@
+{
+  "name": "edgar-lease-finder",
+  "version": "0.1.0",
+  "description": "Finds retail leases filed as exhibits on SEC EDGAR and pulls out their CAM clauses.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": { "start": "node src/main.js" },
+  "dependencies": { "apify": "3.7.2", "cheerio": "1.2.0" }
+}

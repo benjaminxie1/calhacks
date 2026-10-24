@@ -1,0 +1,26 @@
+{
+  "title": "EDGAR lease search",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "query": {
+      "title": "Full-text query",
+      "type": "string",
+      "description": "EDGAR full-text search syntax. Quoted phrases must all appear.",
+      "editor": "textfield",
+      "default": "\"common area maintenance\" \"shopping center\" \"proportionate share\""
+    },
+    "forms": { "title": "Filing forms", "type": "string", "editor": "textfield", "default": "10-K,10-Q,8-K" },
+    "startDate": { "title": "Filed on or after", "type": "string", "editor": "textfield", "default": "2001-01-01" },
+    "maxResults": { "title": "Max leases", "type": "integer", "default": 10, "minimum": 1, "maximum": 100 },
+    "includeText": { "title": "Include full lease text", "type": "boolean", "default": false },
+    "userAgent": {
+      "title": "SEC User-Agent",
+      "type": "string",
+      "editor": "textfield",
+      "description": "SEC asks automated clients to identify themselves with a name and contact email.",
+      "default": "EDGAR Lease Finder (Apify Actor) contact@example.com"
+    }
+  },
+  "required": ["query"]
+}

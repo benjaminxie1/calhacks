@@ -1,0 +1,5 @@
+{
+  "module-path": "./spacetimedb",
+  "server": "maincloud",
+  "database": "cam-dispute-room"
+}

@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "edgar-lease-finder",
+  "title": "EDGAR Retail Lease Finder",
+  "description": "Search SEC EDGAR full text for commercial leases filed as exhibits and extract the clauses that decide common area maintenance (CAM) charges: pro rata share, caps, admin fees, capital exclusions, taxes and audit rights.",
+  "version": "0.1",
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile"
+}

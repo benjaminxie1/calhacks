@@ -7,3 +7,6 @@ runs/
 *.mp4
 *.mov
 .DS_Store
+node_modules/
+actors/*/storage/
+spacetime/spacetimedb/target/

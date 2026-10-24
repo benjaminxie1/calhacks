@@ -15,8 +15,9 @@ from pathlib import Path
 
 import yaml
 
-from . import auditor, classify, evidence, lease_parser, negotiator
+from . import auditor, classify, droid_review, evidence, lease_parser, negotiator
 from .models import AuditResult, LeaseTerms, Statement
+from .room import Room, opt
 from .trail import Trail
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,10 +34,19 @@ def load_env() -> None:
 
 
 def run(lease_path: Path, statement_path: Path, apn: str, county: str, reader: str, writer: str,
-        rulings: dict[str, str], out_dir: Path | None, tax_cache: Path | None = None) -> dict:
-    trail = Trail(out_dir / "trail.jsonl" if out_dir else None)
+        rulings: dict[str, str], out_dir: Path | None, tax_cache: Path | None = None,
+        room: Room | None = None, droid: bool = False) -> dict:
     lease_text = lease_path.read_text()
     stmt = Statement(**yaml.safe_load(statement_path.read_text()))
+    key = f"{stmt.tenant}:{stmt.year}"
+    sink = None
+    if room:
+        # Owner answers given in the dispute room count, unless overridden on the command line.
+        rulings = {**room.rulings(key), **rulings}
+        room.call("open_audit", key, stmt.tenant, stmt.year)
+        sink = lambda e: room.call("log_event", key, e["agent"], e["action"],
+                                   json.dumps({k: v for k, v in e.items() if k not in ("agent", "action", "t")}, default=str))
+    trail = Trail(out_dir / "trail.jsonl" if out_dir else None, sink)
     trail.log("intake", "loaded", lease=str(lease_path.name), statement=str(statement_path.name), lines=len(stmt.lines))
 
     terms: LeaseTerms = lease_parser.parse_lease(lease_text, reader)
@@ -58,12 +68,31 @@ def run(lease_path: Path, statement_path: Path, apn: str, county: str, reader: s
         trail.log("auditor", "finding", rule=f.rule, amount=f.tenant_overcharge, confidence=f.confidence,
                   needs_owner=f.needs_owner, section=f.clause.section if f.clause else None)
 
+    if room:
+        for f in result.findings:
+            # Open questions are keyed by statement line, which is what an owner ruling names.
+            fkey = f.line_ids[0] if f.needs_owner and len(f.line_ids) == 1 else f"{f.rule}:{'+'.join(f.line_ids)}"
+            room.call("add_finding", key, fkey, f.title, f.tenant_overcharge, f.confidence, f.needs_owner,
+                      opt(f.owner_question))
+
     letter, writer_used, rejected = negotiator.draft(stmt, terms, result, writer)
     trail.log("negotiator", "drafted", writer=writer_used, rejected_figures=rejected,
               withheld=[f.rule for f in result.findings if f.needs_owner])
 
+    review = None
+    if droid and out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "letter.txt").write_text(letter)
+        (out_dir / "result.json").write_text(result.model_dump_json(indent=2))
+        review = droid_review.review(out_dir, lease_path)
+        trail.log("droid_reviewer", "reviewed", ok=review.get("ok"), issues=review.get("issues"),
+                  session=review.get("session_id"))
+    if room:
+        room.call("close_audit", key, result.landlord_says_due, result.actually_due,
+                  "needs_owner" if any(f.needs_owner for f in result.findings) else "drafted")
+
     report = {"statement": stmt, "terms": terms, "verified": verified, "result": result, "letter": letter,
-              "writer": writer_used, "reader": reader, "tax": tax, "trail": trail.events}
+              "writer": writer_used, "reader": reader, "tax": tax, "review": review, "trail": trail.events}
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "report.md").write_text(render(report))
@@ -96,6 +125,10 @@ def render(r: dict) -> str:
             out.append(f"    - Question: {f.owner_question}")
     out += ["", "## Lease clauses matched word for word", ""]
     out += [f"- {k}: {'yes' if v else 'NO'}" for k, v in r["verified"].items()]
+    if r.get("review"):
+        rv = r["review"]
+        out += ["", "## Second read (Factory Droid)", "", "Passed." if rv.get("ok") else "Flagged:"]
+        out += [f"- {i}" for i in rv.get("issues") or []]
     out += ["", "## Draft letter (not sent)", "", "```", r["letter"], "```", ""]
     return "\n".join(out)
 
@@ -111,11 +144,13 @@ def main() -> None:
     p.add_argument("--writer", choices=["template", "claude"], default=None)
     p.add_argument("--rule", action="append", default=[], help="Owner ruling, e.g. L9=exclude_capital or L9=include")
     p.add_argument("--out", type=Path, default=None)
+    p.add_argument("--room", action="store_true", help="Mirror to the SpacetimeDB dispute room (needs SPACETIME_DB)")
+    p.add_argument("--droid", action="store_true", help="Have Factory Droid review the letter (needs FACTORY_API_KEY)")
     a = p.parse_args()
     rulings = dict(x.split("=", 1) for x in a.rule)
     out = a.out or ROOT / "runs" / datetime.now().strftime("%Y%m%d-%H%M%S")
     r = run(a.lease, a.statement, a.apn, a.county, a.reader, a.writer or ("claude" if a.reader == "claude" else "template"),
-            rulings, out, SAMPLE / "assessor_cache.json")
+            rulings, out, SAMPLE / "assessor_cache.json", Room.from_env() if a.room else None, a.droid)
     print(render(r))
     print(f"\nWrote {out}/report.md, letter.txt, result.json, trail.jsonl")
 
