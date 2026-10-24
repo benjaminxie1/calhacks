@@ -275,17 +275,19 @@ const LIVE_SD = [0.325, 0.251, 0.327, 0.386, 0.332, 0.539];
 export function liveModel(d: Dict, r: () => number, stage = LIVE_STAGE, boost = 1.3, bonus = 80, minLen = 6): Player {
   let z = 0;
   let lastKey = "";
+  let total = 68; // auctions in the match
   const gauss = () => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
   return {
     name: "Live",
     startBonus: bonus,
-    start() {
+    start(_rack, n) {
       z = gauss();
       lastKey = "";
+      total = 98 - 5 * n;
     },
     bid(v) {
       if (v.bagLeft <= 0) return 0;
-      const k = Math.min(5, Math.floor((6 * (67 - v.bagLeft)) / 68));
+      const k = Math.max(0, Math.min(5, Math.floor((6 * (total - 1 - v.bagLeft)) / total)));
       // Seat factor: half fixed per match, half fresh per auction.
       const e = Math.SQRT1_2 * (z + gauss());
       let b = LIVE_LEVEL[v.letter]! * stage[k]! * Math.exp(LIVE_SD[k]! * e) * (0.6 + 0.7 * r());

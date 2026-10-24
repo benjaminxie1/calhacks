@@ -159,7 +159,7 @@ export const DEFAULT_PARAMS: Params = {
   resCap: 99,
   lostPriceMult: 1,
   seedFloor: 0,
-  pairW: 0.3,
+  pairW: 0,
 };
 
 // mulberry32
