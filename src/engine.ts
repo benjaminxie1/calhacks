@@ -123,6 +123,9 @@ export interface Params {
   // (paced by coins per auction left), valued or not. Heads-up, a letter we
   // don't bid on goes to the opponent for 1 coin. 0 = off.
   seedFloor: number;
+  // Two-word plans: a rack's value is its best target plus pairW × the
+  // best second target that fits beside it in the same future. 0 = off.
+  pairW: number;
 }
 
 export const DEFAULT_PARAMS: Params = {
@@ -156,6 +159,7 @@ export const DEFAULT_PARAMS: Params = {
   resCap: 99,
   lostPriceMult: 1,
   seedFloor: 0,
+  pairW: 0.3,
 };
 
 // mulberry32
@@ -342,6 +346,7 @@ export function valueRack(
   p: Params,
   extra = -1,
 ): { v0: number; v1: number } {
+  if (p.pairW > 0) return valueRackPairs(d, rack, futures, m, p, extra);
   const cands = candidates(d, rack, m, p.maxMissing, p.minTargetLen, p.resCap);
   let sum0 = 0;
   let sum1 = 0;
@@ -388,6 +393,98 @@ export function valueRack(
     }
     sum0 += b0;
     sum1 += Math.max(b0, b1);
+  }
+  const k = futures.length || 1;
+  return { v0: sum0 / k, v1: sum1 / k };
+}
+
+// valueRack with two-word plans: per future, keep the best few completable
+// targets and score the best single word or disjoint pair (the second one
+// at pairW).
+const PAIR_TOP = 8;
+function valueRackPairs(
+  d: Dict,
+  rack: Counts,
+  futures: Int16Array[],
+  m: Market,
+  p: Params,
+  extra: number,
+): { v0: number; v1: number } {
+  const cands = candidates(d, rack, m, p.maxMissing, p.minTargetLen, p.resCap);
+  const lp = extra >= 0 ? m.lambda * m.price[extra]! : 0;
+  const top0: { i: number; v: number }[] = [];
+  const top1: { i: number; v: number }[] = [];
+  const push = (top: { i: number; v: number }[], i: number, v: number) => {
+    if (top.length < PAIR_TOP) top.push({ i, v });
+    else if (v > top[PAIR_TOP - 1]!.v) top[PAIR_TOP - 1] = { i, v };
+    else return;
+    top.sort((a, b) => b.v - a.v);
+  };
+  const floor = (top: { v: number }[]) => (top.length < PAIR_TOP ? 0 : top[PAIR_TOP - 1]!.v);
+  const avail = new Int16Array(26);
+  const fits = (i: number, sign: number) => {
+    const s = d.start[i]!;
+    const e = s + d.nDistinct[i]!;
+    let ok = true;
+    for (let k = s; k < e; k++) {
+      const c = d.letters[2 * k]!;
+      avail[c] -= sign * d.letters[2 * k + 1]!;
+      if (avail[c]! < 0) ok = false;
+    }
+    return ok;
+  };
+  const best = (top: { i: number; v: number }[], f: Int16Array, withExtra: boolean) => {
+    if (top.length === 0) return 0;
+    let b = top[0]!.v;
+    for (let a = 0; a < top.length; a++) {
+      const ta = top[a]!;
+      if (ta.v + p.pairW * ta.v <= b) break;
+      for (let c = 0; c < 26; c++) avail[c] = rack[c]! + f[c]!;
+      if (withExtra) avail[extra]++;
+      fits(ta.i, 1);
+      for (let k = a + 1; k < top.length; k++) {
+        const tb = top[k]!;
+        const v = ta.v + p.pairW * tb.v;
+        if (v <= b) break;
+        if (fits(tb.i, 1)) b = v;
+        fits(tb.i, -1);
+      }
+    }
+    return b;
+  };
+  let sum0 = 0;
+  let sum1 = 0;
+  for (const f of futures) {
+    top0.length = 0;
+    top1.length = 0;
+    for (const { i, cost } of cands) {
+      const v = d.reward[i]! - cost;
+      if (v <= 0 || (v + lp <= floor(top1) && v <= floor(top0))) continue;
+      const s = d.start[i]!;
+      const e = s + d.nDistinct[i]!;
+      let deficit = 0;
+      let defLetter = -1;
+      let needsExtra = false;
+      for (let k = s; k < e; k++) {
+        const c = d.letters[2 * k]!;
+        const need = d.letters[2 * k + 1]! - rack[c]!;
+        if (need <= 0) continue;
+        if (c === extra) needsExtra = true;
+        const short = need - f[c]!;
+        if (short > 0) {
+          deficit += short;
+          defLetter = c;
+          if (deficit > 1) break;
+        }
+      }
+      if (deficit === 0) {
+        push(top0, i, v);
+        if (extra >= 0) push(top1, i, needsExtra ? v + lp : v);
+      } else if (deficit === 1 && defLetter === extra) push(top1, i, v + lp);
+    }
+    const b0 = best(top0, f, false);
+    sum0 += b0;
+    sum1 += extra >= 0 ? Math.max(b0, best(top1, f, true)) : b0;
   }
   const k = futures.length || 1;
   return { v0: sum0 / k, v1: sum1 / k };
