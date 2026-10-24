@@ -4,6 +4,7 @@
 // server plays them, and words playable between auctions. Used to tune
 // the strategy against the bots actually on the leaderboard.
 
+import * as fs from "node:fs";
 import { BAG, LETTER_VALUE, loadDict, type Dict } from "./dict.js";
 import {
   Brain,
@@ -196,6 +197,49 @@ export function proModel(d: Dict, r: () => number, level = 1.1): Player {
       const n1 = nearLong(d, w, 2);
       if (n1 > n0 * 1.3 + 2) b *= 1.5;
       else if (n1 <= n0) b *= 0.7;
+      const perAuction = v.balance / Math.max(1, v.bagLeft + 1);
+      b *= Math.min(1.4, Math.max(0.6, perAuction / 1.5));
+      return Math.max(0, Math.min(Math.floor(b), v.balance));
+    },
+    plays(v, final) {
+      if (final) return bestPartition(d, v.rack, 60).words;
+      const minLen = v.bagLeft > 25 ? 7 : v.bagLeft > 10 ? 6 : 5;
+      const ws = spellable(d, v.rack, minLen).sort((a, b) => d.reward[b]! - d.reward[a]!);
+      return ws.length ? [d.words[ws[0]!]!] : [];
+    },
+    observe() {},
+  };
+}
+
+// A scouted live opponent (data/scout-profiles.json, from
+// scripts/scout-profiles.py): bids the live market price for the letter and
+// phase times that bot's own winning-bid ratio, more when the letter brings a
+// long word closer, paced by money left. Plays like the pro model.
+type ScoutProfile = { market: number[][]; bots: Record<string, Record<"vowel" | "cons" | "rare", number[]>> };
+let scoutData: ScoutProfile | undefined;
+export function scoutModel(d: Dict, r: () => number, who: string): Player {
+  scoutData ??= JSON.parse(fs.readFileSync(new URL("../data/scout-profiles.json", import.meta.url), "utf8")) as ScoutProfile;
+  const prof = scoutData.bots[who];
+  if (!prof) throw new Error(`no scout profile for ${who}`);
+  const cls = (l: number) => ("JQXZ".includes(String.fromCharCode(65 + l)) ? "rare" : "AEIOU".includes(String.fromCharCode(65 + l)) ? "vowel" : "cons");
+  let total = 68;
+  return {
+    name: `Scout:${who}`,
+    start(rack, n) {
+      total = 98 - 5 * n;
+    },
+    bid(v) {
+      if (v.bagLeft <= 0) return 0;
+      const ph = Math.min(2, Math.floor((3 * (total - v.bagLeft - 1)) / total));
+      // Winning bids overstate a bot's typical bid; 0.8 brings the ratio to
+      // about the level it bids on letters it only mildly wants.
+      let b = scoutData!.market[v.letter]![ph]! * prof[cls(v.letter)]![ph]! * 0.8 * (0.75 + 0.5 * r());
+      const w = Int16Array.from(v.rack);
+      w[v.letter]++;
+      const n0 = nearLong(d, v.rack, 2);
+      const n1 = nearLong(d, w, 2);
+      if (n1 > n0 * 1.3 + 2) b *= 1.3;
+      else if (n1 <= n0) b *= 0.6;
       const perAuction = v.balance / Math.max(1, v.bagLeft + 1);
       b *= Math.min(1.4, Math.max(0.6, perAuction / 1.5));
       return Math.max(0, Math.min(Math.floor(b), v.balance));

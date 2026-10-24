@@ -2,7 +2,7 @@
 import { loadDict } from "./dict.js";
 import { rng } from "./engine.js";
 import { allyBot } from "./team.js";
-import { brainBot, fieldModel, proModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
+import { brainBot, fieldModel, proModel, scoutModel, sharkModel, simBot, starterBot, type Player } from "./sim.js";
 
 export function makePlayers(kinds: string[], seed0: number): Player[] {
   const d = loadDict();
@@ -16,6 +16,8 @@ export function makePlayers(kinds: string[], seed0: number): Player[] {
     if (kind.startsWith("brainL")) return brainBot(kind + i, { ...extraB, lam0: Number(kind.slice(6)) }, seed0 * 3000 + i);
     // field12 = a field bot 1.2x as aggressive
     if (kind.startsWith("field") && kind.length > 5) return fieldModel(d, r, Number(kind.slice(5)) / 10);
+    // scout:Doppio = a model of that live bot (data/scout-profiles.json)
+    if (kind.startsWith("scout:")) return scoutModel(d, r, kind.slice(6));
     if (kind.startsWith("shark") && kind.length > 5) return sharkModel(d, r, Number(kind.slice(5)) / 10);
     switch (kind) {
       case "ally": return allyBot(`ally${i}`, extra, seed0 * 1000 + i, allies, team);
