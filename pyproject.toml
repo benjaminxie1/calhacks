@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "proven"
 version = "0.0.1"
-description = "FraudShield Swarm: specialist agents investigate a suspicious-transaction alert; policy in code decides"
+description = "Paid Means Proven: AP three-way match where the receipt of service is an independently verified fix"
 requires-python = ">=3.10"
 dependencies = ["anthropic", "droid-sdk[mcp]", "pyyaml", "pydantic", "python-dotenv"]
 
@@ -13,7 +13,7 @@ dependencies = ["anthropic", "droid-sdk[mcp]", "pyyaml", "pydantic", "python-dot
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]
-include = ["fraudshield*", "proven*"]
+include = ["proven*"]
 
 [tool.pytest.ini_options]
-testpaths = ["fraudshield/tests"]
+testpaths = ["tests"]
