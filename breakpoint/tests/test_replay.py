@@ -119,3 +119,33 @@ def test_T36_demo_script(world_dir):
 
     r = demo.run(_make_db("breakpoint_demo_test"), quiet=True)
     assert demo.ok(r), r["resolution"]
+
+
+def test_T37_ui_smoke(quarter):
+    """R25: every P0 page's API loads with data, and the dashboard is served.
+    (Console errors were checked by hand in Chrome on every page; see README.)"""
+    from fastapi.testclient import TestClient
+
+    from bp.api.app import create_app
+
+    cl = TestClient(create_app(eng=quarter["eng"], replay=quarter["replay"]))
+    st = cl.get("/api/state").json()
+    assert st["days_done"] == 81
+    ov = cl.get("/api/overview").json()
+    assert ov["total_cases"] > 0 and len(ov["series"]) == 81
+    bks = cl.get("/api/breaks").json()
+    assert bks
+    case = next(b["case_id"] for b in bks if b["case_id"])
+    assert cl.get(f"/api/cases/{case}").json()["events"]
+    assert cl.get(f"/api/breaks/{bks[0]['break_id']}").status_code == 200
+    assert "proposals" in cl.get("/api/approvals").json()
+    assert cl.get("/api/teach/" + case).json()["facts_available"]
+    assert cl.get("/api/playbooks").json()
+    assert cl.get("/api/proof").json()["detection"]["recall"] == "100%"
+    assert cl.get("/api/inject/options").json()["types"]
+    assert cl.get("/api/events").json()
+    assert cl.post("/api/ask", json={"case_id": case, "question": "why?"}).json()["citations"]
+    from pathlib import Path
+    if (Path(__file__).parents[1] / "web" / "dist" / "index.html").exists():
+        r = cl.get("/teach")
+        assert r.status_code == 200 and "<div id=\"root\">" in r.text

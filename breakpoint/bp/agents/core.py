@@ -228,10 +228,14 @@ class Preparer:
                 continue
 
             def offline():
+                flat = [f"{k} {s(v) if isinstance(v, Decimal) else v}" for k, v in out["info"].items()
+                        if not isinstance(v, dict)]
+                nested = [f"{k}: {s(v['old_qty'])} -> {s(v['new_qty'])} sh, cost/sh {s(v['old_cost_per_share'])} -> "
+                          f"{s(v['new_cost_per_share'])}" for k, v in out["info"].items() if isinstance(v, dict)]
+                parts = flat + nested
                 return Memo(memo=f"{action_name} for {case['case_id']}: calculator {g['calculator']} on "
                                  f"{g['source_ref']}; moves ${s(out['amount_usd'])} of client cash"
-                                 + (f" ({', '.join(f'{k} {s(v) if isinstance(v, Decimal) else v}' for k, v in out['info'].items() if not isinstance(v, dict))})"
-                                    if out["info"] else "") + ".")
+                                 + (f" ({'; '.join(parts)})" if parts else "") + ".")
             memo, _ = llm.decide("preparer", "Write a one-paragraph memo for the approver describing this correcting "
                                  "entry and why. Cite the calculator by name; do not restate or alter any amount.",
                                  {"case": case["case_id"], "action": action_name, "calculator": g["calculator"],

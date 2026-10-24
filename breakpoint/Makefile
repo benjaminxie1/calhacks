@@ -34,7 +34,7 @@ eval:
 	$(PY) -m bp.eval
 
 api:
-	$(PY) -m uvicorn bp.api.app:app --port 8000 --reload
+	cd web && npm install --silent && npx vite build && cd .. && $(PY) -m uvicorn bp.api.app:app --port 8000
 
 web:
 	cd web && npm install && npm run dev

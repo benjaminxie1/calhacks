@@ -18,6 +18,7 @@ from bp.agents.events import emit, jsonable
 from bp.db import approvals, playbooks, proposals
 from bp.models import Proposal
 from bp.money import D
+from bp.money import s as dstr
 
 APPROVER_AGENT = "approver-agent"
 CONTROLLER = "Sam Lee"
@@ -66,7 +67,7 @@ def playbook_active(conn, pb: dict | None) -> bool:
 def agent_eligible(conn, row: dict) -> tuple[bool, str]:
     body = row["body"]
     if D(row["amount_usd"]) > config.APPROVAL_LIMIT_USD:
-        return False, f"amount ${row['amount_usd']} is over the ${config.APPROVAL_LIMIT_USD} agent limit"
+        return False, f"amount ${dstr(D(row['amount_usd']))} is over the ${config.APPROVAL_LIMIT_USD} agent limit"
     if body["action"]["type"] == "transfer":
         return False, "client money movement needs the controller"
     if not playbook_active(conn, body.get("playbook")):

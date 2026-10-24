@@ -6,6 +6,7 @@ every mutation goes through one lock so the UI and the clock never interleave.
 from __future__ import annotations
 
 import statistics
+from pathlib import Path
 import threading
 import time
 from collections import Counter, defaultdict
@@ -146,7 +147,8 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
         return {**st, "running": bool(runner.thread and runner.thread.is_alive()), "case_counts": counts,
                 "pending_approvals": pending + drafts, "needs_human": counts.get("needs_human", 0),
                 "llm": llm.backend(), "error": runner.last_error, "start": calendar.START.isoformat(),
-                "end": calendar.END.isoformat(), "days_total": len(calendar.business_days())}
+                "end": calendar.END.isoformat(), "days_total": len(calendar.business_days()),
+                "days_done": sum(1 for d in calendar.business_days() if st.get("last_done") and d.isoformat() <= st["last_done"])}
 
     @app.post("/api/replay/play")
     def play():
@@ -390,6 +392,18 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
         with eng.connect() as c:
             return _rows(c, select(ledger_lines.c.asset, func.sum(ledger_lines.c.amount).label("balance")).where(
                 ledger_lines.c.account.like(f"client:{account_id}%")).group_by(ledger_lines.c.asset))
+
+    dist = Path(__file__).resolve().parents[2] / "web" / "dist"
+    if dist.exists():  # serve the built dashboard (single-page app) from the same origin
+        from fastapi.responses import FileResponse
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def spa(path: str):
+            f = dist / path
+            return FileResponse(f if path and f.is_file() else dist / "index.html")
 
     return app
 
