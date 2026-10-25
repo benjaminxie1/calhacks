@@ -31,5 +31,7 @@
   "playEps": 0.053,
   "lamGamma": 0.964,
   "availProb": 0.2,
-  "endgameN": 13
+  "endgameN": 13,
+  "resW": 0.3,
+  "resLate": 2
 }
