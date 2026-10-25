@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "breakpoint"
 version = "0.1.0"
-description = "Breakpoint: an autonomous reconciliation team for a retail brokerage"
+description = "Breakpoint: an autonomous CAM audit team for a multi-location restaurant chain"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",

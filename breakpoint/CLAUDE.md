@@ -1,6 +1,7 @@
 # Breakpoint — rules for working in this repo
 
-Autonomous reconciliation team for a mock retail brokerage (Meridian Securities).
+Autonomous CAM audit team for a mock restaurant chain (Golden Wok Restaurant Group, 40 stores, 12 landlords).
+It reads each landlord's annual CAM statement against the lease, the county tax bill and the estimates we paid.
 Build plan: the "Breakpoint — Hyphenate Track Build Plan" (requirements R1–R28, tests T1–T37).
 
 ## Non-negotiable rules
@@ -12,9 +13,10 @@ Build plan: the "Breakpoint — Hyphenate Track Build Plan" (requirements R1–R
 - LLM output never sets an amount. Amounts come from `bp.calculators` only.
 
 ## Layout
-- `bp/world/` seeded true-world generator + break injector + answer key
+- `bp/world/` seeded true-world generator (leases, statements, tax records, payments) + error injector + answer key
+- `bp/cam.py` lease math: what each statement line should be and which finding each overcharged dollar belongs to
 - `bp/sources/` the eight source systems (store, FastAPI services with per-source keys)
-- `bp/ledger/` double-entry ledger on Postgres + mock bank
+- `bp/ledger/` double-entry ledger on Postgres (accounts `lease:{id}:expense|prepaid|payable`, `cash:operating`)
 - `bp/recon/` deterministic matcher (creates breaks, nothing else)
 - `bp/agents/` llm wrapper, tool registry, investigator, preparer, approver, executor, outreach, learner, auditor
 - `bp/playbooks/` schema, condition language, action library, induction

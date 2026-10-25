@@ -11,11 +11,11 @@ export default function Breaks() {
   const types = useMemo(() => [...new Set((rows || []).map((r) => r.type))].sort(), [rows]);
   const shown = (rows || []).filter((r) =>
     (!status || r.status_label === status) && (!type || r.type === type) &&
-    (!q || [r.break_id, r.account_id, r.symbol, r.ref, r.case_id, r.playbook_id].join(" ").toLowerCase().includes(q.toLowerCase())));
+    (!q || [r.break_id, r.account_id, r.store, r.landlord, r.ref, r.case_id, r.playbook_id].join(" ").toLowerCase().includes(q.toLowerCase())));
   return (
-    <Card title={`Breaks (${shown.length})`}>
+    <Card title={`Findings (${shown.length})`}>
       <div className="mb-3 flex flex-wrap items-center gap-2 [&>input]:w-56 [&>select]:w-44">
-        <input className={inputCls.replace("w-full", "")} placeholder="search id, account, symbol…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className={inputCls.replace("w-full", "")} placeholder="search id, store, landlord, statement…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className={inputCls.replace("w-full", "")} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">all types</option>{types.map((t) => <option key={t}>{t}</option>)}
         </select>
@@ -27,11 +27,11 @@ export default function Breaks() {
           <input type="checkbox" checked={harmless} onChange={(e) => setHarmless(e.target.checked)} /> show harmless
         </label>
       </div>
-      <Table rows={shown} rowKey={(r) => r.break_id} empty="No breaks yet. Press Play." cols={[
+      <Table rows={shown} rowKey={(r) => r.break_id} empty="No findings yet. Press Play." cols={[
         { key: "break_id", label: "ID", mono: true },
         { key: "type", label: "Type" },
-        { key: "account_id", label: "Account", mono: true, render: (r) => r.account_id || "—" },
-        { key: "symbol", label: "Symbol", render: (r) => r.symbol || "—" },
+        { key: "store", label: "Store", render: (r) => r.store ? <span>{r.store} <span className="font-mono text-xs text-slate-400">{r.account_id}</span></span> : "—" },
+        { key: "landlord", label: "Landlord", render: (r) => <span className="text-xs">{r.landlord || "—"}</span> },
         { key: "amount_usd", label: "Amount", right: true, render: (r) => money(r.amount_usd) },
         { key: "sources", label: "Sources", render: (r) => r.sources.join(" vs ") },
         { key: "vals", label: "Values", render: (r) => <span className="text-xs text-slate-600">{Object.entries(r.vals).filter(([k]) => k !== "unexplained").map(([k, v]) => `${k} ${typeof v === "string" && !isNaN(v) ? num(v) : v}`).join(" · ")}</span> },

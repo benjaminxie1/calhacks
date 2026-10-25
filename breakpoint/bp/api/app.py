@@ -243,6 +243,10 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
             r["age"] = bd_between(date.fromisoformat(r["detected_on"]), today) if today else 0
             r["agent"] = agent.get(r["case_id"])
             r["status_label"] = r["case_status"] or r["status"]
+            lease = rp.store.lease_by_id.get(r["account_id"])
+            r["store"] = lease.store if lease else None
+            ll = rp.store.landlord(r["symbol"]) if r["symbol"] else None
+            r["landlord"] = ll.name if ll else None
         return rows
 
     @app.get("/api/cases/{case_id}")

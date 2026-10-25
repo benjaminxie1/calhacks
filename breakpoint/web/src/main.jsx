@@ -17,9 +17,9 @@ import { usePoll } from "./api.js";
 function Nav() {
   const [st] = usePoll("/state");
   const items = [
-    ["/", "Overview"], ["/breaks", "Breaks"],
+    ["/", "Overview"], ["/breaks", "Findings"],
     ["/approvals", "Approvals", st?.pending_approvals], ["/teach", "Teach mode", st?.needs_human],
-    ["/playbooks", "Playbooks"], ["/proof", "Proof"], ["/inject", "Inject break"], ["/audit", "Audit"],
+    ["/playbooks", "Playbooks"], ["/proof", "Proof"], ["/inject", "Inject overcharge"], ["/audit", "Audit"],
   ];
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-4">

@@ -18,7 +18,7 @@ export default function Teach() {
         </p>
         <Table rows={needing} rowKey={(r) => r.case_id} empty="Nothing needs a human right now." cols={[
           { key: "case_id", label: "Case", render: (r) => <Link className="font-mono text-xs text-blue-700" to={`/teach/${r.case_id}`}>{r.case_id}</Link> },
-          { key: "type", label: "Type" }, { key: "account_id", label: "Account", mono: true }, { key: "symbol", label: "Symbol" },
+          { key: "type", label: "Type" }, { key: "store", label: "Store" }, { key: "landlord", label: "Landlord" },
           { key: "reason", label: "What the matcher saw" }, { key: "detected_on", label: "Detected", mono: true },
           { key: "go", label: "", render: (r) => <Button onClick={() => nav(`/teach/${r.case_id}`)}>Teach</Button> },
         ]} />
@@ -100,7 +100,7 @@ function TeachCase({ id }) {
             </Field>
             <Field label="4. Note for the record">
               <textarea className={inputCls} rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. Custodian applied the 2:1 split; our corporate-action job didn't." />
+                placeholder="e.g. The lease has no gross-up clause, so the gross-up line comes off in full." />
             </Field>
             <Button disabled={!trusted || !actions.length || !fact || !note || res} onClick={submit}>Teach and run the fix once</Button>
             {err && <div className="rounded bg-rose-50 p-2 text-sm text-rose-800">{err}</div>}
