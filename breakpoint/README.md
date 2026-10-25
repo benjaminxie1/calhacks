@@ -5,7 +5,7 @@ resolves the ones it has learned, and asks a human only when it meets something 
 
 **Seats it fills:** trade reconciliation analyst and settlements / cash ops analyst at a retail brokerage.
 
-Built for the Cal Hacks 13.0 Hyphenate track (Autonomous Systems for Finance).
+Built for the Cal Hacks 13.0 Hyphenate track, "The Hyphenated Enterprise: Autonomous Systems for Finance".
 
 ## The moment
 

@@ -6,7 +6,7 @@ and update them if anything changed (especially after the live-model run).
 **Tagline (≤ 200 chars):** An autonomous reconciliation team for a retail brokerage: it finds breaks across five systems,
 fixes the ones it has learned, and asks a human only when something is new.
 
-**Track:** Hyphenate — Autonomous Systems for Finance.
+**Track:** The Hyphenated Enterprise: Autonomous Systems for Finance (Hyphenate).
 
 **Seats it fills:** trade reconciliation analyst and settlements / cash ops analyst at a retail brokerage.
 
