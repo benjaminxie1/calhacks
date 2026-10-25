@@ -22,6 +22,7 @@ from bp.agents import approvals
 from bp.agents.auditor import Auditor
 from bp.agents.events import jsonable
 from bp.calendar import bd_between
+from bp.money import D, s
 from bp.db import (approvals as approvals_t, breaks, cases, engine, events, ledger_entries, ledger_lines, messages,
                    playbooks, proposals, sim_state, teach_sessions)
 from bp.engine.replay import Replay
@@ -30,13 +31,14 @@ from bp.playbooks import store as pbstore
 from bp.playbooks.library import ACTIONS
 from bp.recon.context import FACTS
 from bp.sources.api import KEYS, SourceClient, handlers
-from bp.world.live import TYPES as INJECT_TYPES
+from bp.world.live import TYPES as INJECT_TYPES, pending_leases
 
 SPEEDS = {"slow": 2.0, "normal": 0.6, "fast": 0.0}
 TYPE_OF_KEY = {
-    "ledger-custodian:trade_qty": "Trade quantity", "ledger-fee_schedule:commission": "Commission",
-    "ledger-custodian:cash": "Cash", "ledger-custodian:position_qty": "Position", "ledger-bank:cash": "Bank / ACH",
-    "ledger-custodian:principal": "Rounding", "ledger-custodian:settlement_timing": "T+1 timing",
+    "statement-lease:tenant_share": "Tenant share", "statement-lease:admin_fee": "Admin fee",
+    "statement-lease:controllable_cap": "Controllable cap", "statement-lease:capital_exclusion": "Capital item",
+    "statement-county:property_tax": "Property tax", "statement-ap:estimates_credited": "Estimates credited",
+    "statement-lease:gross_up": "Gross-up", "statement-lease:rounding": "Rounding",
 }
 
 
@@ -55,8 +57,7 @@ class Teach(BaseModel):
 
 class Inject(BaseModel):
     type: str
-    account_id: str
-    symbol: str
+    lease_id: str
 
 
 class Ask(BaseModel):
@@ -195,6 +196,10 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
             today = st["last_done"]
             cs = [dict(r) for r in c.execute(select(cases)).mappings()]
             bs = c.execute(select(breaks.c.detected_on, breaks.c.harmless, breaks.c.break_key, breaks.c.status)).all()
+            credited = c.execute(select(func.coalesce(func.sum(proposals.c.amount_usd), 0)).where(
+                proposals.c.status == "executed")).scalar()
+            found = c.execute(select(func.coalesce(func.sum(breaks.c.amount_usd), 0)).where(
+                breaks.c.harmless.is_(False))).scalar()
         by_status = Counter(x["status"] for x in cs)
         open_cs = [x for x in cs if x["status"] not in ("completed", "auto_cleared")]
         closed = [x for x in cs if x["status"] == "completed" and x["closed_on"]]
@@ -216,6 +221,8 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
             "auto_resolution_rate": round(100 * auto / len(cs), 1) if cs else None,
             "auto_resolved": auto, "total_cases": len(cs), "harmless_auto_cleared": harmless,
             "median_days_to_resolve": statistics.median(ttr) if ttr else None, "series": series,
+            "overcharge_found": found, "credits_posted": credited, "leases": len(rp.store.leases),
+            "statements_received": sum(1 for x in rp.store.statements if today and x.received_on <= today),
             "aging": [{"bucket": k, "cases": buckets.get(k, 0)} for k in ["0-1d", "2-3d", "4-10d", ">10d"]],
         })
 
@@ -322,7 +329,7 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
         det = case_detail(case_id)
         key = det["case"]["break_key"]
         return {**det, "facts_available": FACTS.get(key, []),
-                "sources": ["ledger", "custodian", "executions", "bank", "fee_schedule", "corporate_actions"],
+                "sources": ["lease", "county", "bank", "ap", "statement"],
                 "actions": {k: v.model_dump() for k, v in ACTIONS.items()}}
 
     @app.post("/api/teach/{case_id}")
@@ -346,14 +353,20 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
 
     @app.get("/api/inject/options")
     def inject_options():
-        return {"types": INJECT_TYPES, "accounts": [a.model_dump(mode="json") for a in rp.store.accounts],
-                "symbols": [s.symbol for s in rp.store.symbols]}
+        done = rp.last_done()
+        on = calendar.next_bd(done) if done else calendar.START
+        st = rp.store
+        leases = [{"lease_id": lid, "store": st.lease(lid).store, "landlord": st.landlord(st.lease(lid).landlord_id).name,
+                   "has_fee_clause": st.lease(lid).admin_fee_pct is not None,
+                   "has_gross_up_clause": st.lease(lid).gross_up_pct is not None}
+                  for lid in pending_leases(st, on)]
+        return {"types": INJECT_TYPES, "leases": leases, "lands_on": on.isoformat()}
 
     @app.post("/api/inject")
     def inject(i: Inject):
         with runner.lock:
             try:
-                return rp.inject(i.type, i.account_id, i.symbol)
+                return rp.inject(i.type, i.lease_id)
             except ValueError as e:
                 raise HTTPException(400, str(e))
 
@@ -387,11 +400,62 @@ def create_app(eng=None, replay: Replay | None = None) -> FastAPI:
                               | events.c.case_id.ilike(like))
             return _rows(c, qq)
 
-    @app.get("/api/ledger/{account_id}")
-    def ledger_account(account_id: str):
+    @app.get("/api/ledger/{lease_id}")
+    def ledger_account(lease_id: str):
         with eng.connect() as c:
-            return _rows(c, select(ledger_lines.c.asset, func.sum(ledger_lines.c.amount).label("balance")).where(
-                ledger_lines.c.account.like(f"client:{account_id}%")).group_by(ledger_lines.c.asset))
+            return _rows(c, select(ledger_lines.c.account, func.sum(ledger_lines.c.amount).label("balance")).where(
+                ledger_lines.c.account.like(f"lease:{lease_id}:%")).group_by(ledger_lines.c.account))
+
+    # ------------------------------------------------------------------ leases and statements (the CAM view)
+    @app.get("/api/statements/{statement_id}")
+    def statement_detail(statement_id: str):
+        st = rp.store
+        if statement_id not in st.stmt_by_id:
+            raise HTTPException(404, "no such statement")
+        stmt = st.statement(statement_id)
+        done = rp.last_done()
+        if not done or stmt.received_on > done:
+            raise HTTPException(404, "statement not received yet")
+        lease = st.lease(stmt.lease_id)
+        center = st.center(lease.center_id)
+        truth = next(x for x in st.truth_statements if x.statement_id == statement_id)
+        found = rp.matcher.findings(statement_id)
+        with eng.connect() as c:
+            bks = _rows(c, select(breaks).where(breaks.c.ref == statement_id).order_by(breaks.c.break_id))
+            led = _rows(c, select(ledger_lines.c.account, func.sum(ledger_lines.c.amount).label("balance")).where(
+                ledger_lines.c.account.like(f"lease:{lease.lease_id}:%")).group_by(ledger_lines.c.account))
+        credits = sum((D(b["amount_usd"]) for b in bks if not b["harmless"]), D(0))
+        return jsonable({
+            "statement": stmt, "lease": lease, "center": center, "landlord": st.landlord(stmt.landlord_id),
+            "tax_record": st.tax_record(center.apn), "estimates_cleared": st.cleared_estimates(lease.lease_id, stmt.year),
+            "findings": {k: {kk: v[kk] for kk in ("values", "reason", "calculator") if kk in v} for k, v in found.items()},
+            "breaks": bks, "ledger": led, "lease_says": truth.tenant_total if all(b["status"] != "open" for b in bks)
+            else None, "overcharge_found": credits, "lease_text": st.lease_text(lease.lease_id),
+        })
+
+    @app.get("/api/leases")
+    def lease_list():
+        st = rp.store
+        done = rp.last_done()
+        with eng.connect() as c:
+            bk = defaultdict(list)
+            for r in c.execute(select(breaks.c.ref, breaks.c.amount_usd, breaks.c.harmless, breaks.c.status, cases.c.status)
+                               .outerjoin(cases, cases.c.case_id == breaks.c.case_id)):
+                bk[r[0]].append(r)
+        out = []
+        for lease in st.leases:
+            sid = f"STMT-{lease.lease_id}-2025"
+            stmt = st.stmt_by_id.get(sid)
+            got = bool(done and stmt and stmt.received_on <= done)
+            rows = [r for r in bk.get(sid, []) if not r[2]]
+            out.append({"lease_id": lease.lease_id, "store": lease.store, "center": st.center(lease.center_id).name,
+                        "city": st.center(lease.center_id).city, "landlord": st.landlord(lease.landlord_id).name,
+                        "statement_id": sid, "received_on": stmt.received_on.isoformat() if got else None,
+                        "billed": s(stmt.tenant_total) if got else None, "findings": len(rows),
+                        "overcharge": s(sum((D(r[1]) for r in rows), D(0))),
+                        "open": sum(1 for r in rows if r[4] not in ("completed",)),
+                        "window_days": lease.audit_window_days})
+        return out
 
     dist = Path(__file__).resolve().parents[2] / "web" / "dist"
     if dist.exists():  # serve the built dashboard (single-page app) from the same origin

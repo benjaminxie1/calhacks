@@ -21,7 +21,7 @@ from bp import calculators, cam
 from bp.agents.events import emit, jsonable
 from bp.db import breaks
 from bp.ledger import service as ledger
-from bp.money import D, s
+from bp.money import D
 from bp.sources import Sources
 
 ACTOR = "matcher"
@@ -137,6 +137,3 @@ class Matcher:
         left = self.overcharge(f) - ledger.corrections_for(conn, b["detection_key"])
         return left != 0
 
-
-def describe(b: dict) -> str:
-    return f"{b['break_key']} on {b['ref']}: {s(D(b['amount_usd']))}"

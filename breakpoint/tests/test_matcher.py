@@ -6,8 +6,8 @@ from bp.db import breaks
 from bp.engine.replay import Replay
 from bp.sources.store import get_store
 
-KEY_PREFIX = {"B1": "trade_qty:", "B2": "fee:", "B3": "trade_qty:", "B4": "cash:", "N1": "position:", "N2": "bank:",
-              "H2": "price:"}
+KEY_PREFIX = {"share": "share:", "admin_fee": "admin_fee:", "cap": "cap:", "capital": "capital:", "tax": "tax:",
+              "estimates": "estimates:", "gross_up": "gross_up:", "rounding": "rounding:"}
 
 
 def _breaks(eng):
@@ -16,17 +16,16 @@ def _breaks(eng):
 
 
 def test_T4_clean_world(db):
-    """R5, R12: recon on the clean world (zero injected breaks) finds no breaks; only T+1 timing items, all cleared."""
+    """R5, R12: recon on the clean world (every statement exactly what its lease calls for) finds no breaks."""
     rp = Replay(eng=db, store=get_store(clean=True), clean=True, agents=False)
     rp.init(fresh=True)
     rp.run()
-    bs = _breaks(db)
-    assert [b["detection_key"] for b in bs if b["break_key"] != "ledger-custodian:settlement_timing"] == []
-    assert all(b["harmless"] for b in bs)
-    assert sum(b["status"] == "open" for b in bs) <= 1  # the last day's trades settle after the window
+    assert _breaks(db) == []
+    with db.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM ledger_entries WHERE kind = 'statement'")).scalar() == 40
 
 
-@pytest.mark.parametrize("kind", ["B1", "B2", "B3", "B4", "N1", "N2"])
+@pytest.mark.parametrize("kind", ["share", "admin_fee", "cap", "capital", "tax", "estimates", "gross_up"])
 def test_T12_detect_each_type(quarter, kind):
     """R12: each planted type is detected with the right break key and detection keys."""
     rp = quarter["replay"]
@@ -37,21 +36,20 @@ def test_T12_detect_each_type(quarter, kind):
         for k in r["expected_detection_keys"]:
             assert k in found, f"{r['break_id']} not detected: {k}"
             assert k.startswith(KEY_PREFIX[kind])
+            assert found[k]["detected_on"].isoformat() == r["injected_on"]
 
 
 def test_T13_auto_clear(quarter):
-    """R13: T+1 timing and <= $0.01 rounding auto-clear with a reason and never escalate."""
+    """R13: a printed total within $1 of the line-by-line recomputation auto-clears with a reason and never escalates."""
     bs = _breaks(quarter["eng"])
-    h2 = [b for b in bs if b["detection_key"].startswith("price:")]
-    timing = sorted((b for b in bs if b["detection_key"].startswith("timing:")), key=lambda b: b["detected_on"])
-    assert len(h2) == 10 and all(b["status"] == "auto_cleared" and b["reason"] and b["case_id"] is None for b in h2)
-    assert len(timing) == 81
-    assert all(b["status"] == "auto_cleared" and "settled" in b["reason"] for b in timing[:-1])
-    assert all(b["case_id"] is None for b in timing)
+    rounding = [b for b in bs if b["detection_key"].startswith("rounding:")]
+    assert len(rounding) == 6
+    assert all(b["status"] == "auto_cleared" and b["harmless"] and "tolerance" in b["reason"] and b["case_id"] is None
+               for b in rounding)
 
 
 def test_T14_full_detection_accuracy(quarter):
-    """R12, R13: 100% of planted breaks found, 0 unplanted breaks."""
+    """R12, R13: 100% of planted errors found, 0 unplanted breaks."""
     from bp.eval import evaluate
 
     with quarter["eng"].connect() as c:
@@ -63,14 +61,13 @@ def test_T14_full_detection_accuracy(quarter):
 
 def test_T15_rerun_idempotent(quarter):
     """R14: running recon again on the same data creates no duplicate breaks."""
+    from datetime import date
+
     rp = quarter["replay"]
     before = len(_breaks(quarter["eng"]))
-    for d in [r["date"] for r in quarter["days"][:: 10]]:
-        from datetime import date
+    for d in [r["date"] for r in quarter["days"][::5]]:
         with quarter["eng"].begin() as c:
-            rp.matcher.run_transaction(c, date.fromisoformat(d))
-    with quarter["eng"].begin() as c:
-        rp.matcher.recon_eod(c, date.fromisoformat(quarter["days"][-1]["date"]))
+            rp.matcher.run_day(c, date.fromisoformat(d))
     assert len(_breaks(quarter["eng"])) == before
     with quarter["eng"].connect() as c:
         assert c.execute(text("SELECT count(*) - count(DISTINCT detection_key) FROM breaks")).scalar() == 0

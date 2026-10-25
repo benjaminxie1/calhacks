@@ -1,7 +1,7 @@
 """Test fixtures. Tests use their own Postgres databases, never the demo database.
 
 - `db`: a fresh, empty schema per test (unit tests).
-- `quarter`: one full scripted replay of the quarter, shared by the tests that read its results.
+- `quarter`: one full scripted replay of the season, shared by the tests that read its results.
 """
 import os
 
@@ -59,7 +59,7 @@ def db(_unit_engine):
 
 @pytest.fixture(scope="session")
 def quarter(world_dir):
-    """Full scripted replay of Jul 1 - Oct 23 with agents, recording the trial balance after every day."""
+    """Full scripted replay of the season (Feb 2 - May 29) with agents, recording the trial balance after every day."""
     from bp.engine.replay import Replay
     from bp.ledger import service as ledger
 

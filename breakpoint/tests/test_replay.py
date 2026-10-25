@@ -22,8 +22,8 @@ def test_T29_resolution_correctness(quarter):
 
 
 def test_T30_replay(quarter):
-    """R23: 81 days finish without errors; period close, aging and escalation fire as specified."""
-    assert len(quarter["days"]) == 81
+    """R23: 83 days finish without errors; period close, aging and escalation fire as specified."""
+    assert len(quarter["days"]) == 83
     with quarter["eng"].connect() as c:
         errs = c.execute(select(events).where(events.c.action == "error")).all()
         closes = c.execute(select(events.c.sim_date, events.c.reason).where(events.c.action == "period_closed")
@@ -32,7 +32,7 @@ def test_T30_replay(quarter):
                                  WHERE e.kind = 'correction' AND p.closed_on IS NOT NULL AND e.effective_date >= p.closed_on""")).scalar()
     assert errs == []
     assert [(d.isoformat(), r.split()[0]) for d, r in closes] == [
-        ("2026-08-05", "2026-07"), ("2026-09-03", "2026-08"), ("2026-10-05", "2026-09")]
+        ("2026-03-04", "2026-02"), ("2026-04-03", "2026-03"), ("2026-05-05", "2026-04")]
     assert late == 0
 
 
@@ -56,7 +56,7 @@ def test_T31_audit_completeness(quarter):
         assert set(fixes) <= executed
         keys = {e["inputs"].get("detection_key") for e in evs if e["action"] in ("break_detected", "break_auto_cleared")}
         missing = [b.detection_key for b in c.execute(select(breaks.c.detection_key))
-                   if b.detection_key not in keys and not b.detection_key.startswith("timing:")]
+                   if b.detection_key not in keys]
         assert missing == []
     assert all(e["actor"] and e["ts"] and e["reason"] for e in evs)
     assert any(e["evidence"] for e in evs if e["action"] == "proposal_created")
@@ -67,39 +67,45 @@ def test_T31_audit_completeness(quarter):
 def test_T32_ask_why(quarter, attempt):
     """R24: a why-question about a completed case is answered citing its events and playbook."""
     with quarter["eng"].connect() as c:
-        cid = c.execute(text("SELECT case_id FROM cases WHERE completion->>'branch' = 'split' LIMIT 1")).scalar()
+        cid = c.execute(text("SELECT case_id FROM cases WHERE completion->>'branch' = 'gross-up-not-allowed' LIMIT 1")).scalar()
         ans = Auditor().ask(c, "Why was this case resolved automatically, and who taught the fix?", cid)
         seqs = set(c.execute(select(events.c.seq)).scalars())
     assert ans["citations"] and set(ans["citations"]) <= seqs
-    assert "wf-ledger-custodian-position-qty" in ans["answer"] and "Dana Ortiz" in ans["answer"]
+    assert "wf-statement-lease-gross-up" in ans["answer"] and "Dana Ortiz" in ans["answer"]
 
 
-def test_T33_injection_past_the_end_is_refused(store):
-    """A break that would only surface after the replay's last day is refused with a reason, not silently missed."""
-    from bp.world.live import build
-    acct = next(a.account_id for a in store.accounts if a.tier == "standard")
-    for kind in ("B1", "B3", "H2"):
-        with pytest.raises(ValueError, match="replay ends"):
-            build(store, kind, acct, "KO", date(2026, 10, 23), 1)
-    assert build(store, "B1", acct, "KO", date(2026, 10, 22), 1)["answer_key"]
-    assert build(store, "B2", acct, "KO", date(2026, 10, 23), 1)["answer_key"]
+def test_T33_injection_refused(store):
+    """An injection that can't land cleanly is refused with a reason, not silently missed."""
+    from bp.world.live import build, pending_leases
+    lid = pending_leases(store, date(2026, 5, 28))[0]
+    with pytest.raises(ValueError, match="replay ends"):
+        build(store, "share", lid, date(2026, 6, 1), 1)
+    with pytest.raises(ValueError, match="already arrived"):
+        build(store, "share", "LSE-007", date(2026, 3, 4), 1)
+    no_fee = [l for l in pending_leases(store, date(2026, 2, 2)) if store.lease(l).admin_fee_pct is None]
+    if no_fee:
+        with pytest.raises(ValueError, match="no admin fee clause"):
+            build(store, "admin_fee", no_fee[0], date(2026, 2, 2), 1)
+    assert build(store, "share", lid, date(2026, 5, 28), 1)["answer_key"]
 
 
 def test_T33_live_injection(db, store):
-    """R26: a B2 injected from the UI is detected and handled within one replay day."""
+    """R26: a management-fee overcharge injected from the UI is detected the day it lands, routed by the playbook
+    that day, and credited once the controller signs (credits over the limit wait one business day for the controller)."""
+    from bp.world.live import pending_leases
     rp = Replay(eng=db, store=store, controller_mode="scripted", teach_mode="scripted")
     rp.init(fresh=True)
-    rp.run(date(2026, 7, 1), date(2026, 8, 20))
-    acct = next(a.account_id for a in store.accounts if a.tier == "standard")
-    inj = rp.inject("B2", acct, "KO")
-    assert inj["effective_on"] == "2026-08-21"
-    rp.run(date(2026, 8, 21), date(2026, 8, 21))
+    rp.run(date(2026, 2, 2), date(2026, 4, 15))
+    lid = next(l for l in pending_leases(store, date(2026, 4, 16)) if store.lease(l).admin_fee_pct is not None)
+    inj = rp.inject("admin_fee", lid)
+    assert inj["effective_on"] == "2026-04-16"
+    rp.run(date(2026, 4, 16), date(2026, 4, 17))
     with db.connect() as c:
-        b = c.execute(select(breaks).where(breaks.c.detection_key == f"fee:{inj['order_id']}")).mappings().one()
+        b = c.execute(select(breaks).where(breaks.c.detection_key == f"admin_fee:{inj['statement_id']}")).mappings().one()
         case = c.execute(select(cases).where(cases.c.case_id == b["case_id"])).mappings().one()
-    assert b["detected_on"] == date(2026, 8, 21)
-    assert case["status"] == "completed" and case["closed_on"] == date(2026, 8, 21)
-    assert case["branch_id"] == "stale-schedule"
+    assert b["detected_on"] == date(2026, 4, 16)
+    assert case["opened_on"] == date(2026, 4, 16) and case["branch_id"] == "fee-over-limit"
+    assert case["status"] == "completed" and case["closed_on"] <= date(2026, 4, 17)
 
 
 def test_T34_proof_page(quarter):
@@ -141,9 +147,9 @@ def test_T37_ui_smoke(quarter):
 
     cl = TestClient(create_app(eng=quarter["eng"], replay=quarter["replay"]))
     st = cl.get("/api/state").json()
-    assert st["days_done"] == 81
+    assert st["days_done"] == 83
     ov = cl.get("/api/overview").json()
-    assert ov["total_cases"] > 0 and len(ov["series"]) == 81
+    assert ov["total_cases"] > 0 and len(ov["series"]) == 83
     bks = cl.get("/api/breaks").json()
     assert bks
     case = next(b["case_id"] for b in bks if b["case_id"])

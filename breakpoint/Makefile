@@ -1,6 +1,6 @@
 SEED ?= 42
-FROM ?= 2026-07-01
-TO ?= 2026-10-23
+FROM ?= 2026-02-02
+TO ?= 2026-05-29
 SPEED ?= fast
 PY = .venv/bin/python
 

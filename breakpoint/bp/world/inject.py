@@ -13,7 +13,7 @@ import random
 from bp import cam
 from bp.models import AnswerKeyRow, Statement, StatementLine
 from bp.money import D, cents, s
-from bp.world.generate import NO_REPLY, SHOWCASE, World, statement_txn
+from bp.world.generate import GROSS_UP_FIRST, NO_REPLY, SHOWCASE, World, statement_txn
 
 CAPITAL_ITEMS = ["Roof replacement (Building B)", "Parking lot resurfacing", "Structural repairs to east facade",
                  "Roof replacement", "Parking lot resurfacing and restriping"]
@@ -94,11 +94,48 @@ def plant(stmt: Statement, truth: Statement, lease, kinds: list[str], rng: rando
     return st, exp
 
 
+def answer_rows(lease, st: Statement, kinds: list[str], exp: dict, bid, live: bool = False) -> list[AnswerKeyRow]:
+    """One answer-key row per planted error on one statement."""
+    sid, lid, on = st.statement_id, lease.lease_id, st.received_on
+    base = {"injected_on": on, "root_cause_source": "statement"}
+    rows = []
+    for kind in kinds:
+        e = exp[kind]
+        if kind == "rounding":
+            rows.append(AnswerKeyRow(
+                break_id=bid(kind), type="rounding", affected=[{"source": "statement", "id": sid}],
+                expected_detection_keys=[dkey("rounding", sid)], expected_fix=[], expected_final_status="auto_cleared",
+                note=f"{e['line_id']} printed {s(e['delta'])} off the line-by-line share; within $1", **base))
+            continue
+        line = e.get("line_id") if kind == "capital" else None
+        fix_name = {"share": "share_credit", "capital": "capital_credit", "cap": "cap_credit", "admin_fee": "fee_credit",
+                    "tax": "tax_credit", "estimates": "estimates_credit", "gross_up": "gross_up_credit"}[kind]
+        fix = [{"action": fix_name, "amounts": {sid: s(e["credit"])}}]
+        fix.append({"action": {"tax": "request_tax_bills", "estimates": "send_payment_proof"}.get(kind, "dispute_notice")})
+        final = "needs_human" if kind == "tax" and st.landlord_id in NO_REPLY else "completed"
+        note = {"share": f"billed {s(e.get('billed_pct', 0))}% (occupied area) vs lease {s(lease.share_pct)}%",
+                "capital": f"{s(e.get('amount', 0))} capital item passed through",
+                "cap": f"cap adjustment of {s(e.get('excess', 0))} left off",
+                "admin_fee": "management fee at 15% of everything vs the lease's fee and base",
+                "tax": f"taxes billed {s(e.get('billed', 0))} vs county {s(e.get('county', 0))}"
+                       + ("; landlord never sends the tax bills, so the controller decides" if final == "needs_human" else ""),
+                "estimates": f"{MISSED_MONTH} estimate payment not credited",
+                "gross_up": "grossed up to 95% occupancy; the lease has no gross-up clause"
+                            + ("" if live else " — the novel moment, taught by the lease admin lead")}[kind]
+        if live:
+            note = "injected live: " + note
+        rows.append(AnswerKeyRow(
+            break_id=bid(kind), type=kind, affected=[{"source": "statement", "id": sid}, {"source": "lease", "id": lid}],
+            expected_detection_keys=[dkey(kind, sid, line)], expected_fix=fix, expected_final_status=final,
+            first_status="needs_human" if kind == "gross_up" and not live else None, note=note, **base))
+    return rows
+
+
 def inject(w: World) -> None:
     rng = random.Random(w.seed * 7919 + 1)
     leases = {l.lease_id: l for l in w.leases}
-    idx = {s.statement_id: i for i, s in enumerate(w.statements)}
-    truth_by_id = {s.statement_id: s for s in w.truth_statements}
+    idx = {x.statement_id: i for i, x in enumerate(w.statements)}
+    truth_by_id = {x.statement_id: x for x in w.truth_statements}
     book_idx = {t.source_ref: i for i, t in enumerate(w.booking)}
     truth_idx = {t.source_ref: i for i, t in enumerate(w.truth)}
     n = {"n": 0}
@@ -115,51 +152,15 @@ def inject(w: World) -> None:
         st, exp = plant(w.statements[idx[sid]], truth, lease, kinds, rng, lease.monthly_estimate_2025)
         w.statements[idx[sid]] = st
         w.booking[book_idx[sid]] = statement_txn(st, w.booking[book_idx[sid]].txn_id)
-        if "estimates" in kinds:  # the landlord dropped one payment; AP and the bank have all twelve
-            pass
         if "rounding" in kinds:  # within tolerance: the SOP accepts the landlord's figure, so the correct books do too
             t = truth.model_copy(deep=True)
             t.tenant_total += exp["rounding"]["delta"]
             t.balance_due += exp["rounding"]["delta"]
             w.truth[truth_idx[sid]] = statement_txn(t, w.truth[truth_idx[sid]].txn_id)
-        on = st.received_on
-        base = {"injected_on": on, "root_cause_source": "statement"}
-        ll = st.landlord_id
         for kind in kinds:
-            e = exp[kind]
-            if kind == "rounding":
-                w.answer_key.append(AnswerKeyRow(
-                    break_id=bid(kind), type="rounding", affected=[{"source": "statement", "id": sid}],
-                    expected_detection_keys=[dkey("rounding", sid)], expected_fix=[], expected_final_status="auto_cleared",
-                    note=f"{e['line_id']} printed {s(e['delta'])} off the line-by-line share; within $1", **base))
-                continue
-            if kind == "gross_up" and lid != "LSE-012":
-                gross_later.append((lid, sid, e, on))
-                continue
-            line = e.get("line_id") if kind == "capital" else None
-            fix_name = {"share": "share_credit", "capital": "capital_credit", "cap": "cap_credit", "admin_fee": "fee_credit",
-                        "tax": "tax_credit", "estimates": "estimates_credit", "gross_up": "gross_up_credit"}[kind]
-            fix = [{"action": fix_name, "amounts": {sid: s(e["credit"])}}]
-            if kind == "tax":
-                fix.append({"action": "request_tax_bills"})
-            elif kind == "estimates":
-                fix.append({"action": "send_payment_proof"})
-            else:
-                fix.append({"action": "dispute_notice"})
-            final = "needs_human" if kind == "tax" and ll in NO_REPLY else "completed"
-            note = {"share": f"billed {s(e.get('billed_pct', 0))}% (occupied area) vs lease {s(lease.share_pct)}%",
-                    "capital": f"{e.get('amount') and s(e['amount'])} capital item passed through",
-                    "cap": f"cap adjustment of {s(e.get('excess', 0))} left off",
-                    "admin_fee": "management fee at 15% of everything vs the lease's fee and base",
-                    "tax": f"taxes billed {s(e.get('billed', 0))} vs county {s(e.get('county', 0))}"
-                           + ("; landlord never sends the tax bills, so the controller decides" if final == "needs_human" else ""),
-                    "estimates": f"{MISSED_MONTH} estimate payment not credited",
-                    "gross_up": "grossed up to 95% occupancy; the lease has no gross-up clause — the novel moment, "
-                                "taught by the lease admin lead"}[kind]
-            w.answer_key.append(AnswerKeyRow(
-                break_id=bid(kind), type=kind, affected=[{"source": "statement", "id": sid}, {"source": "lease", "id": lid}],
-                expected_detection_keys=[dkey(kind, sid, line)], expected_fix=fix, expected_final_status=final,
-                first_status="needs_human" if kind == "gross_up" else None, note=note, **base))
+            if kind == "gross_up" and lid != GROSS_UP_FIRST:
+                gross_later.append((lid, sid, exp[kind], st.received_on))
+        w.answer_key += answer_rows(lease, st, [k for k in kinds if k != "gross_up" or lid == GROSS_UP_FIRST], exp, bid)
     if gross_later:
         on = gross_later[0][3]
         w.answer_key.append(AnswerKeyRow(

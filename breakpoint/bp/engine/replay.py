@@ -1,9 +1,9 @@
-"""Simulated clock (R23): replays the quarter one business day at a time.
+"""Simulated clock (R23): replays the reconciliation season one business day at a time.
 
-Daily loop: lock due periods, ingest the day's booking feed into the ledger, run
-transaction recon, let agents work open cases, run end-of-day position and cash
-recon, then aging. Cases, playbooks and their history persist across days, so a
-lesson learned in August changes what happens in October.
+Daily loop: lock due periods, ingest the day's AP booking feed into the ledger (estimate
+payments and the statements that arrived), recompute each new statement against its
+lease, let agents work open cases, then aging. Cases, playbooks and their history
+persist across days, so a lesson learned in March changes what happens in May.
 """
 from __future__ import annotations
 
@@ -63,8 +63,8 @@ class Replay:
         for r in conn.execute(select(injections)):
             self.store.apply_injection(r.id, r.records)
 
-    def inject(self, kind: str, account_id: str, symbol: str, on: date | None = None) -> dict:
-        """Plant a break that lands in the next replay day (judge-driven, R26)."""
+    def inject(self, kind: str, lease_id: str, on: date | None = None) -> dict:
+        """Plant an error in a statement that lands on the next replay day (judge-driven, R26)."""
         from bp.world.live import build
 
         done = self.last_done()
@@ -72,14 +72,13 @@ class Replay:
         with self.eng.begin() as c:
             seq = c.execute(select(injections.c.id)).all()
             inj_id = f"INJ-{len(seq) + 1:03d}"
-            recs = build(self.store, kind, account_id, symbol, on, len(seq) + 1)
-            c.execute(injections.insert().values(id=inj_id, effective_on=on, spec={"type": kind, "account_id": account_id,
-                                                                                   "symbol": symbol}, records=recs,
-                                                 answer_key=recs["answer_key"]))
-            emit(c, "judge", "break_injected", f"{kind} on {account_id} {symbol}, lands {on}",
-                 inputs={"injection": inj_id, "order": recs["orders"][0]["order_id"]}, sim_date=on)
+            recs = build(self.store, kind, lease_id, on, len(seq) + 1)
+            c.execute(injections.insert().values(id=inj_id, effective_on=on, spec={"type": kind, "lease_id": lease_id},
+                                                 records=recs, answer_key=recs["answer_key"]))
+            emit(c, "judge", "break_injected", f"{kind} on {lease_id}'s statement, lands {on}",
+                 inputs={"injection": inj_id, "statement": recs["statements"][0]["statement_id"]}, sim_date=on)
         self.store.apply_injection(inj_id, recs)
-        return {"injection": inj_id, "effective_on": on.isoformat(), "order_id": recs["orders"][0]["order_id"],
+        return {"injection": inj_id, "effective_on": on.isoformat(), "statement_id": recs["statements"][0]["statement_id"],
                 "answer_key": recs["answer_key"][0]}
 
     # ------------------------------------------------------------------ the daily loop

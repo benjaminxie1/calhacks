@@ -213,6 +213,10 @@ def generate(seed: int = config.SEED) -> World:
                    **{x: date(2026, 5, 5) for x in GROSS_UP_LATER}}
     free = [d for d in received]
     rng.shuffle(free)
+    # clean stores arrive late in the season, so a judge always has a statement still to come to inject into
+    clean = [x for x in lease_ids if x not in plan]
+    late = [d for d in business_days() if date(2026, 4, 13) <= d <= date(2026, 5, 28)]
+    late_dates = {x: late[i * (len(late) - 1) // max(len(clean) - 1, 1)] for i, x in enumerate(clean)}
 
     for k, lid in enumerate(lease_ids):
         city, county = CITIES[k % len(CITIES)]
@@ -315,6 +319,7 @@ def generate(seed: int = config.SEED) -> World:
                                  status_date=next_bd(paid) if paid.year == 2026 else paid + timedelta(days=2)))
 
         rec = fixed_dates.get(lid) or free.pop()
+        rec = late_dates.get(lid, rec)
         stmt_date = rec - timedelta(days=rng.randint(3, 9))
         truth_stmts.append(Statement(
             statement_id=f"STMT-{lid}-2025", lease_id=lid, landlord_id=owner[lid], year=2025, statement_date=stmt_date,
