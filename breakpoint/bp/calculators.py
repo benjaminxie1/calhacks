@@ -3,11 +3,16 @@
 Each calculator is a pure function of its captured inputs. A proposal records the
 calculator name and inputs; anyone can recompute it, and a proposal whose amounts
 do not match a recomputation is rejected. No other code path produces an amount.
+
+A CAM credit reduces what the tenant owes the landlord and the CAM expense it booked:
+debit the lease's landlord payable, credit its CAM expense. An estimates credit
+relieves prepaid estimates instead of expense.
 """
 from __future__ import annotations
 
 from decimal import Decimal
 
+from bp.cam import cap_limit, share_of
 from bp.money import D, cents
 
 
@@ -15,84 +20,66 @@ class CalculatorMismatch(ValueError):
     pass
 
 
-def _client(a: str) -> str:
-    return f"client:{a}"
+def _acct(lease_id: str, kind: str) -> str:
+    return f"lease:{lease_id}:{kind}"
 
 
-def _pairs(*legs) -> list[dict]:
-    """legs: (debit_account, credit_account, asset, amount); zero legs dropped. Each leg balances."""
-    out = []
-    for acc, offset, asset, amt in legs:
-        amt = D(amt)
-        if amt != 0:
-            out += [{"account": acc, "asset": asset, "amount": amt}, {"account": offset, "asset": asset, "amount": -amt}]
-    return out
+def _credit(lease_id: str, amount: Decimal, against: str = "expense") -> list[dict]:
+    amt = D(amount)
+    if amt == 0:
+        return []
+    return [{"account": _acct(lease_id, "payable"), "asset": "USD", "amount": amt},
+            {"account": _acct(lease_id, against), "asset": "USD", "amount": -amt}]
 
 
-def reverse_unfilled(i: dict) -> dict:
-    """Bring a trade booking back to what actually executed: qty, principal, and fee."""
-    sign = D(1) if i["side"] == "buy" else D(-1)
-    target_qty = sign * D(i["exec_qty"])
-    target_principal = -sign * D(i["exec_principal"])
-    dq = target_qty - D(i["ledger_qty"])
-    dp = target_principal - D(i["ledger_principal"])
-    df = D(i["schedule_fee"]) - D(i["ledger_fee"])
-    c = _client(i["account_id"])
-    postings = _pairs((c, "street", i["symbol"], dq), (c, "street", "USD", dp), ("revenue:fees", c, "USD", df))
-    return {"postings": postings, "amount_usd": abs(dp) + abs(df),
-            "info": {"unfilled_qty": abs(dq), "principal_returned": dp, "fee_returned": -df}}
+def share_credit(i: dict) -> dict:
+    """Billed share vs lease share, line by line, on the lines as billed."""
+    per_line = {l["line_id"]: share_of(l["amount"], i["billed_pct"]) - share_of(l["amount"], i["lease_pct"])
+                for l in i["lines"]}
+    amt = sum(per_line.values(), D(0))
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt,
+            "info": {"credit": amt, "billed_pct": D(i["billed_pct"]), "lease_pct": D(i["lease_pct"])}}
 
 
-def reverse(i: dict) -> dict:
-    """Exact negation of a posted entry (used for duplicates)."""
-    postings = [{"account": p["account"], "asset": p["asset"], "amount": -D(p["amount"])} for p in i["postings"]]
-    usd = sum((abs(p["amount"]) for p in postings if p["asset"] == "USD" and p["account"].startswith("client:")), D(0))
-    return {"postings": postings, "amount_usd": usd, "info": {"reverses": i["txn_id"]}}
+def capital_credit(i: dict) -> dict:
+    amt = share_of(i["amount"], i["share_pct"])
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt,
+            "info": {"credit": amt, "line_id": i["line_id"]}}
 
 
-def adjust(i: dict) -> dict:
-    """Refund (or charge) the difference between the commission charged and the schedule."""
-    diff = D(i["charged"]) - D(i["schedule"])
-    return {"postings": _pairs((_client(i["account_id"]), "revenue:fees", "USD", diff)), "amount_usd": abs(diff),
-            "info": {"refund": diff, "schedule_version": i.get("schedule_version")}}
+def cap_credit(i: dict) -> dict:
+    limit = cap_limit(i["prior"], i["cap_pct"])
+    excess = D(i["controllable"]) - limit
+    amt = share_of(excess, i["share_pct"]) + share_of(i["billed_adjustment"], i["share_pct"])
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt,
+            "info": {"credit": amt, "cap_limit": limit, "excess": excess}}
 
 
-def dividend(i: dict) -> dict:
-    amt = cents(D(i["rate"]) * D(i["shares"]))
-    return {"postings": _pairs((_client(i["account_id"]), f"issuer:{i['symbol']}", "USD", amt)), "amount_usd": amt,
-            "info": {"dividend": amt}}
+def fee_credit(i: dict) -> dict:
+    allowed = cents(D(i["base"]) * D(i["fee_pct"]) / D(100))
+    amt = share_of(i["billed_fee"], i["share_pct"]) - share_of(allowed, i["share_pct"])
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt,
+            "info": {"credit": amt, "allowed_fee": allowed}}
 
 
-def split_adjust(i: dict) -> dict:
-    """Multiply each holder's position by the ratio; halve (1/ratio) cost per share; no cash."""
-    ratio = D(i["ratio"])
-    legs, info = [], {}
-    for h in i["holders"]:
-        add = D(h["qty"]) * (ratio - 1)
-        legs.append((_client(h["account_id"]), f"issuer:{i['symbol']}", i["symbol"], add))
-        info[h["account_id"]] = {"old_qty": D(h["qty"]), "new_qty": D(h["qty"]) + add,
-                                 "old_cost_per_share": D(h["avg_cost"]),
-                                 "new_cost_per_share": cents(D(h["avg_cost"]) / ratio)}
-    return {"postings": _pairs(*legs), "amount_usd": D(0), "info": info}
+def tax_credit(i: dict) -> dict:
+    amt = share_of(i["billed_tax"], i["share_pct"]) - share_of(i["county_tax"], i["share_pct"])
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt, "info": {"credit": amt}}
 
 
-def reverse_deposit(i: dict) -> dict:
-    amt = D(i["amount"])
-    return {"postings": _pairs(("firm:omnibus", _client(i["account_id"]), "USD", amt)), "amount_usd": amt,
-            "info": {"reversed": amt, "return_code": i.get("return_code")}}
+def gross_up_credit(i: dict) -> dict:
+    amt = share_of(i["billed_gross_up"], i["share_pct"]) - share_of(i["allowed_gross_up"], i["share_pct"])
+    return {"postings": _credit(i["lease_id"], amt), "amount_usd": amt, "info": {"credit": amt}}
 
 
-def receivable(i: dict) -> dict:
-    cash = D(i["cash_after_reversal"])
-    deficit = -cash if cash < 0 else D(0)
-    c = _client(i["account_id"])
-    return {"postings": _pairs((c, f"{c}:receivable", "USD", deficit)), "amount_usd": deficit,
-            "info": {"client_owes": deficit}}
+def estimates_credit(i: dict) -> dict:
+    amt = D(i["paid"]) - D(i["credited"])
+    return {"postings": _credit(i["lease_id"], amt, against="prepaid"), "amount_usd": amt, "info": {"credit": amt}}
 
 
 CALCULATORS = {
-    "reverse_unfilled": reverse_unfilled, "reverse": reverse, "adjust": adjust, "dividend": dividend,
-    "split_adjust": split_adjust, "reverse_deposit": reverse_deposit, "receivable": receivable,
+    "share_credit": share_credit, "capital_credit": capital_credit, "cap_credit": cap_credit, "fee_credit": fee_credit,
+    "tax_credit": tax_credit, "gross_up_credit": gross_up_credit, "estimates_credit": estimates_credit,
 }
 
 

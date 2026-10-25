@@ -1,6 +1,6 @@
 """Contracts for every source and every domain object.
 
-Money and quantities are Decimal everywhere (R6). Each source model mirrors one
+Money and percentages are Decimal everywhere (R6). Each source model mirrors one
 system's view of the world; none of them is the truth.
 """
 from __future__ import annotations
@@ -11,8 +11,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Side = Literal["buy", "sell"]
-
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -20,29 +18,104 @@ class Model(BaseModel):
 
 # ---------------------------------------------------------------- sources (1-8)
 
-class Order(Model):  # 1. OMS
-    order_id: str
-    account_id: str
-    symbol: str
-    side: Side
-    qty: Decimal
-    order_type: Literal["market", "limit"]
-    limit_px: Decimal | None = None
-    submitted_at: str  # ISO timestamp, simulated
-    trade_date: date
-    status: Literal["filled", "partially_filled", "cancelled"]
+class Clause(Model):
+    section: str
+    quote: str  # verbatim from the lease text
 
 
-class Execution(Model):  # 2. Executing broker (FIX-style)
-    exec_id: str
-    order_id: str
-    fill_qty: Decimal
-    fill_px: Decimal
-    venue: str
-    exec_time: str
-    trade_date: date
-    exec_type: Literal["new", "cancel", "correct"]
-    poss_dup: bool = False  # FIX PossDupFlag: a re-sent report
+class Landlord(Model):  # 1. reference: landlords and their property managers
+    landlord_id: str
+    name: str
+    contact: str
+    email: str
+    reply_sla_days: int = 2
+
+
+class Center(Model):  # 1. reference: shopping centers
+    center_id: str
+    name: str
+    address: str
+    city: str
+    county: str
+    apn: str  # assessor's parcel number
+    gla_sf: Decimal  # gross leasable area
+    landlord_id: str
+
+
+class Lease(Model):  # 2. lease administration system: the abstract of each store's lease
+    lease_id: str
+    store: str
+    tenant_entity: str
+    center_id: str
+    landlord_id: str
+    suite: str
+    premises_sf: Decimal
+    gla_sf: Decimal
+    share_pct: Decimal  # tenant's share, percent
+    cap_pct: Decimal | None  # max yearly increase in controllable expenses, percent
+    admin_fee_pct: Decimal | None
+    admin_fee_base_excludes: list[str]  # categories the fee may not be charged on
+    capital_excluded: bool
+    taxes_actual_paid: bool
+    gross_up_pct: Decimal | None  # occupancy the lease lets the landlord gross variable costs up to; None = no clause
+    audit_window_days: int
+    monthly_estimate_2025: Decimal
+    monthly_estimate_2026: Decimal
+    clauses: dict[str, Clause]
+
+
+Category = Literal["controllable", "utilities", "insurance", "taxes", "repairs", "admin_fee", "gross_up",
+                   "cap_adjustment"]
+
+
+class StatementLine(Model):
+    line_id: str
+    description: str
+    category: Category
+    amount: Decimal  # center level, as the landlord states it
+    tenant_amount: Decimal  # the tenant's share the landlord printed for this line
+
+
+class Statement(Model):  # 3. landlord statements (the annual CAM reconciliation, as received)
+    statement_id: str
+    lease_id: str
+    landlord_id: str
+    year: int
+    statement_date: date
+    received_on: date
+    share_billed_pct: Decimal
+    occupied_sf: Decimal  # what the landlord reports as leased and occupied
+    occupancy_pct: Decimal
+    prior_year_controllable: Decimal
+    lines: list[StatementLine]
+    tenant_total: Decimal  # sum of tenant_amount
+    estimates_credited: Decimal
+    balance_due: Decimal  # tenant_total - estimates_credited (negative = credit to the tenant)
+
+
+class EstimatePayment(Model):  # 4. accounts payable: monthly CAM estimate payments
+    payment_id: str
+    lease_id: str
+    period: str  # YYYY-MM the estimate covers
+    amount: Decimal
+    paid_on: date
+
+
+class BankItem(Model):  # 5. bank: what actually cleared
+    payment_id: str
+    lease_id: str
+    amount: Decimal
+    status: Literal["cleared", "returned"]
+    status_date: date
+
+
+class TaxRecord(Model):  # 6. county property tax records (Apify Actor output shape)
+    apn: str
+    county: str
+    tax_year: str
+    total_tax: Decimal
+    installments: list[dict]
+    source: Literal["apify", "cache"] = "cache"
 
 
 class Posting(Model):
@@ -51,7 +124,7 @@ class Posting(Model):
     amount: Decimal
 
 
-class LedgerTxn(Model):  # 3. Internal ledger (what the booking system sends to post)
+class LedgerTxn(Model):  # 7. booking feed (what AP codes and sends to the general ledger)
     txn_id: str
     date: date
     settle_date: date
@@ -59,98 +132,10 @@ class LedgerTxn(Model):  # 3. Internal ledger (what the booking system sends to 
     postings: list[Posting]
     source_ref: str
     reason: str
-    actor: str = "booking-system"
+    actor: str = "ap-system"
 
 
-class CustodianPosition(Model):  # 4. Custodian / clearing statement
-    date: date
-    account_id: str
-    symbol: str
-    qty: Decimal
-
-
-class CustodianCash(Model):
-    date: date
-    account_id: str
-    balance: Decimal
-
-
-class CustodianSettlement(Model):
-    trade_ref: str
-    account_id: str
-    symbol: str
-    side: Side
-    qty: Decimal
-    settle_date: date
-    net_amount: Decimal  # gross principal, signed from the client's view (buy < 0)
-    commission: Decimal
-
-
-class CustodianCashActivity(Model):
-    date: date
-    account_id: str
-    kind: Literal["dividend", "ach_in", "ach_out", "ach_return", "settlement"]
-    ref: str
-    amount: Decimal
-    symbol: str | None = None
-
-
-class BankTransfer(Model):  # 5. Bank (firm account + client ACH)
-    transfer_id: str
-    account_id: str
-    direction: Literal["in", "out"]
-    amount: Decimal
-    initiated_on: date
-    status: Literal["pending", "settled", "returned"]
-    status_date: date
-    return_code: str | None = None
-
-
-class Price(Model):  # 6. Reference and market data
-    date: date
-    symbol: str
-    close_px: Decimal
-
-
-class SymbolRef(Model):
-    symbol: str
-    cik: str
-    name: str
-
-
-class CorporateAction(Model):
-    action_id: str
-    symbol: str
-    type: Literal["split", "dividend"]
-    ratio: Decimal | None = None  # split: new shares per old share
-    rate: Decimal | None = None  # dividend: USD per share
-    ex_date: date
-    record_date: date
-    pay_date: date
-
-
-class FeeTier(Model):  # 7. Fee schedule (client agreement)
-    tier: str
-    per_trade: Decimal
-    per_share: Decimal
-    min_fee: Decimal
-    max_fee: Decimal
-
-
-class FeeSchedule(Model):
-    version: int
-    effective_from: date
-    tiers: list[FeeTier]
-
-
-class Account(Model):
-    account_id: str
-    name: str
-    tier: str
-    opened: date
-
-
-class Person(Model):  # 8. People directory
+class Person(Model):  # 8. people directory
     role: str
     name: str
     owns: str
@@ -161,7 +146,7 @@ class Person(Model):  # 8. People directory
 
 # ---------------------------------------------------------------- domain
 
-BreakType = Literal["B1", "B2", "B3", "B4", "H1", "H2", "N1", "N2", "S1", "S2", "UNKNOWN"]
+BreakType = Literal["share", "admin_fee", "cap", "capital", "tax", "estimates", "rounding", "gross_up", "UNKNOWN"]
 CaseStatus = Literal[
     "new", "investigating", "waiting", "awaiting_approval", "completed", "auto_cleared", "needs_human"
 ]
@@ -170,13 +155,13 @@ CaseStatus = Literal[
 class Break(Model):
     break_id: str
     detection_key: str
-    break_key: str  # which sources disagree on which field, e.g. ledger-custodian:trade_qty
-    level: Literal["transaction", "position", "cash"]
-    account_id: str | None
-    symbol: str | None
-    ref: str | None
+    break_key: str  # which sources disagree on which field, e.g. statement-lease:tenant_share
+    level: Literal["statement"]
+    account_id: str | None  # the lease
+    symbol: str | None  # the landlord
+    ref: str | None  # the statement
     sources: list[str]
-    values: dict[str, str]  # per-source value, as strings of Decimal
+    values: dict[str, str]
     amount_usd: Decimal
     detected_on: date
     status: Literal["open", "resolved", "auto_cleared"]
@@ -188,7 +173,7 @@ class Action(Model):
     type: Literal[
         "journal_entry", "source_correction_request", "transfer", "request_info", "notify", "hold", "escalate"
     ]
-    template: str | None = None  # journal_entry: reverse | adjust | dividend | split_adjust | reverse_unfilled | ...
+    template: str | None = None  # journal_entry: the calculator that produces its amounts
     to_role: str | None = None
 
 
@@ -203,7 +188,7 @@ class Proposal(Model):
     calculator: str  # the deterministic calculator that produced every number (R11)
     calc_inputs: dict
     references: list[str] = Field(default_factory=list)  # original entries this corrects
-    source_ref: str  # the order / transfer / corporate action the fix belongs to
+    source_ref: str  # the finding the fix belongs to (its detection key)
     playbook: dict | None = None  # {"id", "version", "branch"} or None for a taught one-off fix
     memo: str
     prepared_by: str
@@ -216,7 +201,8 @@ class AnswerKeyRow(Model):
     affected: list[dict]  # [{"source": ..., "id": ...}]
     expected_detection_keys: list[str]
     root_cause_source: str
-    expected_fix: list[dict]  # [{"action": ..., "template": ..., "amounts": {...}}]
+    expected_fix: list[dict]  # [{"action": ..., "amounts": {...}}]
     expected_final_status: Literal["completed", "auto_cleared", "needs_human"]
     first_status: Literal["needs_human"] | None = None  # novel: stops for a human before the lesson exists
     note: str = ""
+

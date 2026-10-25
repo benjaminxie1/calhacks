@@ -2,13 +2,13 @@ import { usePoll } from "../api.js";
 import { Badge, Card, Stat, Table } from "../ui.jsx";
 
 const REAL = [
-  ["Symbols and CIKs", "Real, from SEC EDGAR (company_tickers.json)"],
-  ["Prices", "Simulated: seeded random walk (labeled)"],
-  ["Ledger engine", "Real double-entry ledger on Postgres (Formance fallback); simulated entries"],
-  ["Bank", "In-app mock bank with real ACH return codes (Increase fallback)"],
-  ["Orders, executions, custodian", "Simulated by the seeded generator"],
+  ["Lease math", "Real CAM clauses: pro-rata share on GLA, controllable cap, admin fee base, capital exclusion, gross-up"],
+  ["Leases and statements", "Simulated by the seeded generator: 40 stores, 12 landlords (mock)"],
+  ["County tax records", "Simulated per parcel (APN), standing in for the assessor's lookup"],
+  ["Ledger engine", "Real double-entry ledger on Postgres; simulated entries"],
+  ["AP payments and bank", "Simulated estimate payments with bank clearing status"],
   ["People", "Personas answering from the true world (LLM-played when a key is set)"],
-  ["Breaks", "Planted, with an answer key"],
+  ["Overcharges", "Planted, with an answer key"],
 ];
 
 export default function Proof() {
@@ -19,15 +19,15 @@ export default function Proof() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat label="Detection recall" value={det.recall} sub="planted breaks found" tone="text-emerald-700" />
-        <Stat label="Detection precision" value={det.precision} sub={`${det.false_positives.length} unplanted breaks`} tone="text-emerald-700" />
+        <Stat label="Detection recall" value={det.recall} sub="planted overcharges found" tone="text-emerald-700" />
+        <Stat label="Detection precision" value={det.precision} sub={`${det.false_positives.length} unplanted findings`} tone="text-emerald-700" />
         <Stat label="Resolved correctly" value={`${r.resolution.correct}/${r.resolution.total}`} sub="status + answer-key amounts" />
         <Stat label="Ledger = true world" value={r.ledger_vs_truth.equal ? "yes" : "no"} tone={r.ledger_vs_truth.equal ? "text-emerald-700" : "text-rose-600"}
-          sub="every client and firm balance" />
+          sub="every lease and cash balance" />
         <Stat label="Invariants" value={r.invariants.all_green ? "all green" : "failing"} tone={r.invariants.all_green ? "text-emerald-700" : "text-rose-600"} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Per break type vs the answer key">
+        <Card title="Per finding type vs the answer key">
           <Table rows={Object.entries(det.per_type).map(([t, v]) => ({ t, ...v }))} rowKey={(x) => x.t} cols={[
             { key: "t", label: "Type", mono: true },
             { key: "planted", label: "Planted", right: true },
@@ -35,7 +35,7 @@ export default function Proof() {
             { key: "recall", label: "Recall", right: true },
             { key: "resolved_correctly", label: "Resolved correctly", right: true },
           ]} />
-          <div className="mt-2 text-xs text-slate-500">Plus {det.timing_items} T+1 settlement timing items, auto-cleared by rule.</div>
+          
         </Card>
         <Card title="Ledger invariants">
           <ul className="space-y-1.5 text-sm">
@@ -48,7 +48,7 @@ export default function Proof() {
           </ul>
         </Card>
       </div>
-      <Card title="Every planted break">
+      <Card title="Every planted error">
         <Table rows={r.resolution.rows} rowKey={(x) => x.break_id} cols={[
           { key: "break_id", label: "Answer key", mono: true },
           { key: "type", label: "Type", mono: true },

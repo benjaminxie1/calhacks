@@ -3,21 +3,19 @@ from bp.models import Action
 
 ACTIONS: dict[str, Action] = {
     # journal entries (amounts always come from bp.calculators)
-    "reverse_unfilled": Action(type="journal_entry", template="reverse_unfilled"),
-    "reverse_duplicate": Action(type="journal_entry", template="reverse"),
-    "fee_refund": Action(type="journal_entry", template="adjust"),
-    "post_dividend": Action(type="journal_entry", template="dividend"),
-    "split_adjust": Action(type="journal_entry", template="split_adjust"),
-    "reverse_deposit": Action(type="journal_entry", template="reverse_deposit"),
-    "book_receivable": Action(type="journal_entry", template="receivable"),
+    "share_credit": Action(type="journal_entry", template="share_credit"),
+    "capital_credit": Action(type="journal_entry", template="capital_credit"),
+    "cap_credit": Action(type="journal_entry", template="cap_credit"),
+    "fee_credit": Action(type="journal_entry", template="fee_credit"),
+    "tax_credit": Action(type="journal_entry", template="tax_credit"),
+    "estimates_credit": Action(type="journal_entry", template="estimates_credit"),
+    "gross_up_credit": Action(type="journal_entry", template="gross_up_credit"),
     # people
-    "notify_client_service": Action(type="notify", to_role="client_service"),
-    "notify_client": Action(type="notify", to_role="client"),
-    "request_info_custodian": Action(type="request_info", to_role="custodian_ops"),
-    "request_info_broker": Action(type="request_info", to_role="broker_desk"),
-    "request_funds": Action(type="request_info", to_role="client"),
-    "source_correction_request": Action(type="source_correction_request", to_role="broker_desk"),
-    "transfer": Action(type="transfer"),
+    "dispute_notice": Action(type="notify", to_role="landlord"),
+    "send_payment_proof": Action(type="notify", to_role="landlord"),
+    "notify_ap": Action(type="notify", to_role="accounts_payable"),
+    "request_tax_bills": Action(type="request_info", to_role="landlord"),
+    "request_backup": Action(type="request_info", to_role="landlord"),
     "hold": Action(type="hold"),
     "escalate": Action(type="escalate", to_role="controller"),
 }

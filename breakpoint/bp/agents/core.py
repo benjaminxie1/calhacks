@@ -8,7 +8,7 @@ Preparer (LLM + calculators): turns a branch's journal-entry actions into propos
 Every number comes from bp.calculators; the model only writes the memo.
 
 Approver (LLM bound by coded policy): may approve only what the policy allows
-(<= $500, active playbook, no client money movement). The model can decline an
+(<= the agent limit, active playbook, no money movement). The model can decline an
 eligible proposal (sending it to the controller) but can never widen the policy.
 """
 from __future__ import annotations
@@ -19,18 +19,17 @@ from decimal import Decimal
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from bp import calculators
+from bp import calculators, config
 from bp.agents import approvals, llm
 from bp.agents.events import emit, jsonable
 from bp.agents.tools import AgentTools
 from bp.models import Proposal
-from bp.money import D, cents, s
+from bp.money import D, s
 from bp.playbooks import conditions
 from bp.playbooks import store as pbstore
 from bp.playbooks.library import ACTIONS
 from bp.recon import context as ctx
 from bp.recon import matcher as M
-from bp.world.generate import compute_fee
 
 
 # ====================================================================== Investigator
@@ -109,26 +108,31 @@ class Investigator:
 
 def _explain(key, branch, f, brks) -> str:
     b = brks[0]
-    if branch.id == "partial-fill":
-        return (f"The broker filled {s(f['executions_qty'])} of {s(f['order_qty'])} shares and the custodian settled "
-                f"{s(f['custodian_qty'])}, but the ledger booked the full {s(f['ledger_qty'])}. Executions are right; "
-                f"the booking system booked the order quantity instead of the fills.")
-    if branch.id == "duplicate-report":
-        return ("The broker re-sent the execution report (PossDup) and the booking system posted it twice; the "
-                f"custodian settled once ({s(f['custodian_qty'])} shares). The second booking is a duplicate.")
-    if branch.id == "stale-schedule":
-        return (f"The commission charged ({s(f['ledger_fee'])}) equals the previous schedule version, but schedule "
-                f"v{s(f['schedule_version'])} ({s(f['schedule_fee'])}) was in force on the trade date. Refund the difference.")
-    if branch.id == "dividend-missing":
-        return (f"The custodian credited a dividend of {s(f['dividend_amount'])} and the ledger is short by exactly that "
-                "amount. The corporate-action job missed this account.")
-    if branch.id == "split":
-        return (f"A {s(f['split_ratio'])}:1 split took effect today. The custodian applied it ({s(f['custodian_qty'])} "
-                f"shares); the ledger still shows {s(f['ledger_qty'])}. Applies to every holder in this case "
-                f"({len(brks)}). Cash is unaffected; cost per share divides by the ratio.")
-    if branch.id == "ach-return":
-        return ("The bank returned the client's ACH deposit (R01) after it had been spent. Reverse the deposit, book "
-                "what the client now owes as a receivable, and ask the client for funds.")
+    m = lambda x: f"${D(x):,.2f}"  # noqa: E731
+    if key == M.K_SHARE:
+        return (f"The landlord billed a {s(f['billed_share_pct'])}% share, which is our square footage over the center's "
+                f"occupied area ({s(f['share_by_occupied_pct'])}%). The lease fixes the share at {s(f['lease_share_pct'])}% "
+                "of gross leasable area whether or not it is leased, so every line is overstated.")
+    if key == M.K_FEE:
+        return (f"The statement charges an admin fee of {m(f['billed_fee'])}. The lease caps it at {s(f['lease_fee_pct'])}% "
+                f"of operating expenses after the controllable cap and outside its exclusions, which is {m(f['lease_max_fee'])}.")
+    if key == M.K_CAP:
+        return (f"Controllable expenses are billed at {m(f['controllable_billed'])}, above the lease cap of "
+                f"{m(f['cap_limit'])} ({s(f['cap_pct'])}% over the prior year), and the statement has no cap adjustment.")
+    if key == M.K_CAPITAL:
+        return (f"{b['detection_key'].split(':')[-1]} is a replacement or structural item ({m(f['line_amount'])}). The lease "
+                "excludes costs of a capital nature from operating expenses, so none of it is ours.")
+    if key == M.K_TAX:
+        return (f"Real estate taxes are billed at {m(f['billed_tax'])}; the county's bill for the parcel is "
+                f"{m(f['county_tax'])}. The lease passes through only taxes actually levied and paid, so we book to the "
+                "county figure and ask the landlord for the bills.")
+    if key == M.K_EST:
+        return (f"The landlord credited {m(f['estimates_credited'])} of estimates, but {m(f['estimates_cleared'])} cleared "
+                f"our bank: one {m(f['monthly_estimate'])} monthly payment is missing from their ledger.")
+    if key == M.K_GROSS:
+        return (f"The landlord grossed up variable expenses to 95% occupancy ({m(f['gross_up_billed'])}) with the center "
+                f"{s(f['occupancy_pct'])}% occupied. The lease has no gross-up clause, so the adjustment is not chargeable"
+                + (f" at any of the {len(brks)} stores in this case." if len(brks) > 1 else "."))
     return f"{branch.id}: trusted source {branch.trust}; condition {branch.when} holds. {b.get('reason') or ''}"
 
 
@@ -148,73 +152,18 @@ class Preparer:
     def gather(self, conn, action_name: str, case: dict, brks: list[dict], d: date) -> list[dict]:
         """Return [{calculator, inputs, source_ref, references}] for one action (deterministic reads only)."""
         tmpl = ACTIONS[action_name].template
-        b = brks[0]
-        if tmpl == "reverse_unfilled":
-            tv = self.m.trade_view(conn, b["ref"])
-            o, lv = tv["order"], tv["ledger"]
-            fills, seen = [], set()
-            for e in self.m.src("executions").executions_for(o.order_id):
-                if e.exec_type != "cancel" and e.exec_id not in seen and not e.poss_dup:
-                    seen.add(e.exec_id)
-                    fills.append(e)
-            exec_qty = sum((e.fill_qty for e in fills), D(0))
-            fees = self.m.src("fees")
-            booking = next(e["txn_id"] for e in tv["entries"] if e["kind"] == "trade")
-            return [{"calculator": "reverse_unfilled", "source_ref": o.order_id, "references": [booking], "inputs": {
-                "account_id": o.account_id, "symbol": o.symbol, "side": o.side, "ledger_qty": lv["qty"],
-                "ledger_principal": lv["principal"], "ledger_fee": lv["fee"], "exec_qty": exec_qty,
-                "exec_principal": sum((cents(e.fill_qty * e.fill_px) for e in fills), D(0)),
-                "schedule_fee": compute_fee(fees.tier[o.account_id], exec_qty, fees.fee_schedule_on(o.trade_date))}}]
-        if tmpl == "reverse":
-            tv = self.m.trade_view(conn, b["ref"])
-            dup = [e for e in tv["entries"] if e["kind"] == "trade"][-1]
-            return [{"calculator": "reverse", "source_ref": b["ref"], "references": [dup["txn_id"]],
-                     "inputs": {"txn_id": dup["txn_id"], "postings": dup["postings"]}}]
-        if tmpl == "adjust":
-            fv = self.m.fee_view(conn, b["ref"])
-            return [{"calculator": "adjust", "source_ref": b["ref"],
-                     "references": [x["txn_id"] for x in fv["bookings"]],
-                     "inputs": {"account_id": b["account_id"], "charged": fv["net_charged"],
-                                "schedule": fv["net_schedule"], "schedule_version": fv["version"]}}]
-        if tmpl == "dividend":
-            det = _d(b["detected_on"])
-            cust = self.m.src("custodian")
-            out = []
-            booked = ledger_refs(conn, [a.ref for a in cust.custodian_cash_activity(det)])
-            for a in cust.custodian_cash_activity(det):
-                if a.account_id != b["account_id"] or a.kind != "dividend" or a.ref in booked:
-                    continue
-                ca = next(c for c in self.m.src("reference").corporate_actions_asof(det)
-                          if c.symbol == a.symbol and c.type == "dividend" and c.pay_date == det)
-                shares = cust.custodian_positions(ca.record_date).get((a.account_id, a.symbol), D(0))
-                out.append({"calculator": "dividend", "source_ref": f"{ca.action_id}:{a.account_id}", "references": [],
-                            "inputs": {"account_id": a.account_id, "symbol": a.symbol, "rate": ca.rate,
-                                       "shares": shares, "record_date": ca.record_date.isoformat(),
-                                       "action_id": ca.action_id}})
-            return out
-        if tmpl == "split_adjust":
-            det = _d(b["detected_on"])
-            ca = next(c for c in self.m.src("reference").corporate_actions_asof(det)
-                      if c.symbol == b["symbol"] and c.type == "split" and c.ex_date == det)
-            holders = [{"account_id": x["account_id"], "qty": D(x["vals"]["ledger"]),
-                        "avg_cost": _avg_cost(conn, x["account_id"], x["symbol"])} for x in brks]
-            return [{"calculator": "split_adjust", "source_ref": ca.action_id, "references": [],
-                     "inputs": {"symbol": ca.symbol, "ratio": ca.ratio, "action_id": ca.action_id,
-                                "ex_date": ca.ex_date.isoformat(), "holders": holders}}]
-        if tmpl == "reverse_deposit":
-            bv = self.m.bank_view(conn, b["ref"], d)
-            t = bv["transfer"]
-            return [{"calculator": "reverse_deposit", "source_ref": t.transfer_id,
-                     "references": [e["txn_id"] for e in bv["entries"]],
-                     "inputs": {"account_id": t.account_id, "amount": t.amount, "transfer_id": t.transfer_id,
-                                "return_code": t.return_code}}]
-        if tmpl == "receivable":
-            acct = b["account_id"]
-            cash = conn.execute(text("SELECT coalesce(sum(amount), 0) FROM ledger_lines WHERE account = :a AND asset = 'USD'"),
-                                {"a": f"client:{acct}"}).scalar()
-            return [{"calculator": "receivable", "source_ref": f"{b['ref']}:receivable", "references": [],
-                     "inputs": {"account_id": acct, "cash_after_reversal": cash, "transfer_id": b["ref"]}}]
-        raise ValueError(f"no gatherer for template {tmpl}")
+        out = []
+        for b in brks:
+            f = self.m.finding(b)
+            if f is None or f["calculator"] != tmpl:
+                continue
+            booked = conn.execute(text("SELECT txn_id FROM ledger_entries WHERE source_ref = :r AND kind = 'statement'"),
+                                  {"r": b["ref"]}).scalars().all()
+            out.append({"calculator": tmpl, "inputs": f["inputs"], "source_ref": b["detection_key"],
+                        "references": list(booked)})
+        if not out:
+            raise ValueError(f"no finding on this case is priced by {tmpl}")
+        return out
 
     def prepare(self, conn, action_name: str, case: dict, brks: list[dict], d: date) -> list[str]:
         self.tools.check(conn, "run_calculator", d, case["case_id"])
@@ -228,13 +177,10 @@ class Preparer:
                 continue
 
             def offline():
-                flat = [f"{k} {s(v) if isinstance(v, Decimal) else v}" for k, v in out["info"].items()
-                        if not isinstance(v, dict)]
-                nested = [f"{k}: {s(v['old_qty'])} -> {s(v['new_qty'])} sh, cost/sh {s(v['old_cost_per_share'])} -> "
-                          f"{s(v['new_cost_per_share'])}" for k, v in out["info"].items() if isinstance(v, dict)]
-                parts = flat + nested
+                parts = [f"{k} {s(v) if isinstance(v, Decimal) else v}" for k, v in out["info"].items()
+                         if not isinstance(v, dict) and k != "credit"]
                 return Memo(memo=f"{action_name} for {case['case_id']}: calculator {g['calculator']} on "
-                                 f"{g['source_ref']}; moves ${s(out['amount_usd'])} of client cash"
+                                 f"{g['source_ref']} credits ${s(out['amount_usd'])} against the landlord payable"
                                  + (f" ({'; '.join(parts)})" if parts else "") + ".")
             memo, _ = llm.decide("preparer", "Write a one-paragraph memo for the approver describing this correcting "
                                  "entry and why. Cite the calculator by name; do not restate or alter any amount.",
@@ -247,31 +193,6 @@ class Preparer:
                 source_ref=g["source_ref"], playbook=pb, memo=memo.memo, prepared_by=self.name)
             pids.append(approvals.create(conn, p, d))
         return pids
-
-
-def ledger_refs(conn, refs: list[str]) -> set[str]:
-    if not refs:
-        return set()
-    return set(conn.execute(text("SELECT DISTINCT source_ref FROM ledger_entries WHERE source_ref = ANY(:r)"),
-                            {"r": refs}).scalars())
-
-
-def _d(x) -> date:
-    return x if isinstance(x, date) else date.fromisoformat(str(x))
-
-
-def _avg_cost(conn, account_id: str, symbol: str) -> Decimal:
-    r = conn.execute(text("""
-        SELECT coalesce(sum(CASE WHEN l.asset = :s AND l.amount > 0 THEN l.amount END), 0) AS qty,
-               coalesce(sum(CASE WHEN l.asset = 'USD' THEN l.amount END), 0) AS usd
-        FROM ledger_entries e JOIN ledger_lines l ON l.txn_id = e.txn_id
-        WHERE e.kind = 'trade' AND l.account = :a AND e.txn_id IN (
-            SELECT e2.txn_id FROM ledger_entries e2 JOIN ledger_lines l2 ON l2.txn_id = e2.txn_id
-            WHERE e2.kind = 'trade' AND l2.account = :a AND l2.asset = :s AND l2.amount > 0)"""),
-                     {"a": f"client:{account_id}", "s": symbol}).first()
-    if not r or not r.qty:
-        return D(0)
-    return cents(-D(r.usd) / D(r.qty))
 
 
 # ====================================================================== Approver agent
@@ -303,7 +224,7 @@ class ApproverAgent:
 
         def offline():
             return Review(approve=calc_ok, reason=(
-                f"Within policy (${s(D(row['amount_usd']))} <= $500, active playbook {body['playbook']['id']} "
+                f"Within policy (${s(D(row['amount_usd']))} <= ${config.APPROVAL_LIMIT_USD:,}, active playbook {body['playbook']['id']} "
                 f"v{body['playbook']['version']} branch {body['playbook']['branch']}); calculator {body['calculator']} "
                 f"reproduces every amount." if calc_ok else "calculator does not reproduce the amounts"))
         rev, _ = llm.decide("approver", "Review this proposal against its evidence. Approve only if the entry is what "

@@ -1,1 +1,1 @@
-"""Breakpoint: autonomous reconciliation for Meridian Securities (mock)."""
+"""Breakpoint: autonomous CAM reconciliation audits for Golden Wok Restaurant Group (mock)."""

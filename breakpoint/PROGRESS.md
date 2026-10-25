@@ -1,5 +1,11 @@
 # Breakpoint: build progress (updated 2026-10-24)
 
+> **2026-10-25: Breakpoint pivoted from brokerage reconciliation to CAM audits** (branch `claude/project-thread-ykopqi`).
+> The world is now Golden Wok Restaurant Group: 40 stores, 12 landlords, annual CAM statements arriving Feb 2 to May 29,
+> 2026. The novel case is an unauthorized gross-up (taught Mar 10, reused May 5). README.md is current; the brokerage
+> details below are history. `make test`: 52 passed, 1 skipped. `make demo`: 33/33, $54,317.97 credited.
+
+
 Branch `breakpoint`. Plan: "Breakpoint — Hyphenate Track Build Plan" (Desktop PDF). See README.md for the full picture.
 
 ## Done and verified

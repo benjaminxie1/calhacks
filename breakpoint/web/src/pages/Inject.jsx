@@ -1,60 +1,61 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, post, usePoll } from "../api.js";
 import { Button, Card, Field, inputCls } from "../ui.jsx";
 
 export default function Inject() {
-  const [opts] = usePoll("/inject/options", 60000);
-  const [type, setType] = useState("B2");
-  const [acct, setAcct] = useState("ACC-0007");
-  const [sym, setSym] = useState("KO");
+  const [opts] = usePoll("/inject/options", 5000);
+  const [type, setType] = useState("admin_fee");
+  const [lease, setLease] = useState("");
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
   const [found, setFound] = useState(null);
+  const leases = (opts?.leases || []).filter((l) =>
+    (type !== "admin_fee" || l.has_fee_clause) && (type !== "gross_up" || !l.has_gross_up_clause));
+  useEffect(() => {
+    if (leases.length && !leases.find((l) => l.lease_id === lease)) setLease(leases[0].lease_id);
+  }, [leases, lease]);
   const go = async () => {
     setErr(null); setFound(null);
-    try { setRes(await post("/inject", { type, account_id: acct, symbol: sym })); } catch (e) { setErr(e.message); }
+    try { setRes(await post("/inject", { type, lease_id: lease })); } catch (e) { setErr(e.message); }
   };
   const check = async () => {
     const bks = await api("/breaks?include_harmless=true");
-    setFound(bks.find((b) => b.ref === res.order_id) || "not yet");
+    setFound(bks.find((b) => b.ref === res.statement_id) || "not yet");
   };
   if (!opts) return <div className="text-slate-400">Loading…</div>;
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card title="Inject a break into the live replay">
+      <Card title="Plant an overcharge in a statement still to arrive">
         <div className="space-y-3">
-          <Field label="Break type">
+          <Field label="Overcharge">
             <select className={inputCls} value={type} onChange={(e) => setType(e.target.value)}>
-              {Object.entries(opts.types).map(([k, v]) => <option key={k} value={k}>{k} — {v}</option>)}
+              {Object.entries(opts.types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </Field>
-          <Field label="Account">
-            <select className={inputCls} value={acct} onChange={(e) => setAcct(e.target.value)}>
-              {opts.accounts.map((a) => <option key={a.account_id} value={a.account_id}>{a.account_id} · {a.name} · {a.tier}</option>)}
-            </select>
+          <Field label="Store (statement not yet received)">
+            {leases.length ? (
+              <select className={inputCls} value={lease} onChange={(e) => setLease(e.target.value)}>
+                {leases.map((l) => <option key={l.lease_id} value={l.lease_id}>{l.lease_id} · {l.store} · {l.landlord}</option>)}
+              </select>
+            ) : <div className="text-sm text-slate-500">Every store's statement has arrived. Reset the replay to inject again.</div>}
           </Field>
-          <Field label="Symbol">
-            <select className={inputCls} value={sym} onChange={(e) => setSym(e.target.value)}>
-              {opts.symbols.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-          <Button onClick={go}>Inject into the next replay day</Button>
+          <Button onClick={go} disabled={!leases.length}>Land it on {opts.lands_on}</Button>
           {err && <div className="rounded bg-rose-50 p-2 text-sm text-rose-800">{err}</div>}
         </div>
       </Card>
       <Card title="What happens">
         <p className="text-sm text-slate-600">
-          The injector creates a real trade for the account in every source system, then plants the break in the view that
-          should disagree, and appends an answer-key row. Press Play or Step: the matcher finds it, the agents handle it, and
-          the Proof page scores it.
+          The landlord's statement for that store arrives on the next replay day carrying the error, AP books it as billed,
+          and an answer-key row records the credit the lease calls for. Press Play or Step: the matcher reads the statement
+          against the lease, the county and the bank, the agents handle it, and the Proof page scores it.
         </p>
         {res && (
           <div className="mt-3 space-y-2 rounded bg-slate-50 p-3 text-sm">
-            <div><b>{res.injection}</b> lands on <span className="font-mono">{res.effective_on}</span> as order <span className="font-mono">{res.order_id}</span>.</div>
+            <div><b>{res.injection}</b> lands on <span className="font-mono">{res.effective_on}</span> as statement <span className="font-mono">{res.statement_id}</span>.</div>
             <div className="text-xs text-slate-500">Expected: {res.answer_key.expected_detection_keys.join(", ")} → {res.answer_key.expected_final_status}</div>
             <Button variant="ghost" onClick={check}>Where is it now?</Button>
-            {found && (found === "not yet" ? <div className="text-xs">Not detected yet — step the replay.</div> :
+            {found && (found === "not yet" ? <div className="text-xs">Not detected yet. Step the replay.</div> :
               <div className="text-sm">Detected as <span className="font-mono">{found.break_id}</span>, status <b>{found.status_label}</b>
                 {found.case_id && <> · <Link className="text-blue-700" to={`/cases/${found.case_id}`}>{found.case_id}</Link></>}</div>)}
           </div>

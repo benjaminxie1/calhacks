@@ -3,7 +3,7 @@
 - Detection: per break type, recall (planted breaks whose expected detection keys
   were all found) and precision (breaks found that belong to a planted break).
 - Resolution: final status vs expected, and executed amounts vs the answer key.
-- Ledger vs truth: every client (cash + receivable, positions) and firm balance
+- Ledger vs truth: every lease account (CAM expense, prepaid estimates, landlord payable) and cash balance
   equals the correct books built from the true world.
 - Invariants: trial balance zero, every entry balanced, no posting into a period
   after it closed, unique idempotency keys, no float columns.
@@ -23,25 +23,21 @@ from bp.ledger import service as ledger
 from bp.money import D, s
 from bp.sources.store import SourceStore
 
-TYPES = ["B1", "B2", "B3", "B4", "H2", "N1", "N2"]
+TYPES = ["share", "admin_fee", "cap", "capital", "tax", "estimates", "gross_up", "rounding"]
 
 
-def truth_balances(store: SourceStore, upto=None) -> tuple[dict, dict]:
-    client, firm = defaultdict(Decimal), defaultdict(Decimal)
+def truth_balances(store: SourceStore, upto=None) -> dict:
+    out = defaultdict(Decimal)
     for t in store.truth:
         if upto and t.date > upto:
             continue
         for p in t.postings:
-            if p.account.startswith("client:"):
-                client[(p.account.split(":")[1], p.asset)] += p.amount
-            else:
-                firm[(p.account, p.asset)] += p.amount
-    return client, firm
+            out[(p.account, p.asset)] += p.amount
+    return out
 
 
-def ledger_firm_balances(conn) -> dict:
-    rows = conn.execute(text("SELECT account, asset, sum(amount) FROM ledger_lines WHERE account NOT LIKE 'client:%' "
-                             "GROUP BY 1, 2"))
+def ledger_balances(conn) -> dict:
+    rows = conn.execute(text("SELECT account, asset, sum(amount) FROM ledger_lines GROUP BY 1, 2"))
     return {(a, s_): v for a, s_, v in rows}
 
 
@@ -75,7 +71,7 @@ def evaluate(conn, store: SourceStore) -> dict:
                      "status_ok": final == ak["expected_final_status"], "amounts_ok": amounts_ok, "detail": detail,
                      "note": ak.get("note", "")})
 
-    flagged = [b for b in brk if b["break_key"] != "ledger-custodian:settlement_timing"]
+    flagged = list(brk)
     false_pos = [b["detection_key"] for b in flagged if b["detection_key"] not in attributed]
     per_type = {}
     for t in TYPES + sorted({r["type"] for r in rows} - set(TYPES)):
@@ -90,17 +86,13 @@ def evaluate(conn, store: SourceStore) -> dict:
     n_found = len(flagged)
     precision = _ratio(n_found - len(false_pos), n_found)
 
-    lc = _nz(ledger.client_balances(conn))
-    tc, tf = truth_balances(store)
-    tc, tf = _nz(tc), _nz(tf)
-    lf = _nz(ledger_firm_balances(conn))
-    client_diff = {f"{a}:{k}": s(lc.get((a, k), D(0)) - tc.get((a, k), D(0)))
-                   for (a, k) in set(lc) | set(tc) if lc.get((a, k), D(0)) != tc.get((a, k), D(0))}
-    firm_diff = {f"{a}:{k}": s(lf.get((a, k), D(0)) - tf.get((a, k), D(0)))
-                 for (a, k) in set(lf) | set(tf) if lf.get((a, k), D(0)) != tf.get((a, k), D(0))}
+    lb, tb = _nz(ledger_balances(conn)), _nz(truth_balances(store))
+    diff = {f"{a}:{k}": s(lb.get((a, k), D(0)) - tb.get((a, k), D(0)))
+            for (a, k) in set(lb) | set(tb) if lb.get((a, k), D(0)) != tb.get((a, k), D(0))}
+    lease_diff = {k: v for k, v in diff.items() if k.startswith("lease:")}
+    firm_diff = {k: v for k, v in diff.items() if not k.startswith("lease:")}
 
     invariants = _invariants(conn)
-    timing = [b for b in brk if b["break_key"] == "ledger-custodian:settlement_timing"]
     harmless_auto = sum(1 for b in brk if b["harmless"] and b["status"] == "auto_cleared")
     total_items = len(brk)
     comp = {r.case_id: r.completion for r in conn.execute(select(cases.c.case_id, cases.c.completion))}
@@ -109,12 +101,11 @@ def evaluate(conn, store: SourceStore) -> dict:
     closed = sum(1 for b in brk if b["status"] in ("resolved", "auto_cleared"))
     return {
         "detection": {"per_type": per_type, "precision": precision,
-                      "recall": _ratio(sum(r["detected"] for r in rows), len(rows)), "false_positives": false_pos,
-                      "timing_items": len(timing)},
+                      "recall": _ratio(sum(r["detected"] for r in rows), len(rows)), "false_positives": false_pos},
         "resolution": {"rows": rows, "correct": sum(r["status_ok"] and r["amounts_ok"] for r in rows),
                        "total": len(rows)},
-        "ledger_vs_truth": {"client_mismatches": client_diff, "firm_mismatches": firm_diff,
-                            "equal": not client_diff and not firm_diff},
+        "ledger_vs_truth": {"lease_mismatches": lease_diff, "firm_mismatches": firm_diff,
+                            "equal": not lease_diff and not firm_diff},
         "invariants": invariants,
         "auto_resolution_rate": _ratio(auto_cases, len(case_status)),
         "cases": {"total": len(case_status), "auto_resolved": auto_cases, "taught": taught,
@@ -141,32 +132,18 @@ def _amounts_ok(ak: dict, found: list[dict], by_case) -> tuple[bool, str]:
     outs = {}
     for p in {p["proposal_id"]: p for p in props}.values():
         body = p["body"]
-        outs.setdefault(body["action_name"], []).append(calculators.run(body["calculator"], body["calc_inputs"]))
+        outs.setdefault(body["action_name"], []).append((calculators.run(body["calculator"], body["calc_inputs"]),
+                                                         body["calc_inputs"]))
     for f in fixes:
         got = outs.get(f["action"])
         if not got:
             return False, f"no executed {f['action']}"
-        a, o = f["amounts"], got[0]
-        if f["action"] == "reverse_unfilled":
-            ok = (D(o["info"]["unfilled_qty"]) == D(a["qty"]) and abs(D(o["info"]["principal_returned"])) == D(a["principal"])
-                  and D(o["info"]["fee_returned"]) == D(a["fee"]))
-        elif f["action"] == "fee_refund":
-            ok = D(o["info"]["refund"]) == D(a["refund"])
-        elif f["action"] == "reverse_duplicate":
-            ok = o["info"]["reverses"] == a["txn"]
-        elif f["action"] == "post_dividend":
-            ok = D(o["info"]["dividend"]) == D(a["amount"])
-        elif f["action"] == "split_adjust":
-            got_adds = {k: v["new_qty"] - v["old_qty"] for k, v in o["info"].items()}
-            ok = got_adds == {k: D(v) for k, v in a.items()}
-        elif f["action"] == "reverse_deposit":
-            ok = D(o["info"]["reversed"]) == D(a["amount"])
-        elif f["action"] == "book_receivable":
-            ok = True  # depends on trades between the return and the fix; checked via ledger-vs-truth net
-        else:
-            ok = True
-        if not ok:
-            return False, f"{f['action']} amounts differ from the answer key"
+        want = {sid: D(v) for sid, v in f["amounts"].items()}
+        have = defaultdict(Decimal)
+        for o, inputs in got:
+            have[inputs["statement_id"]] += D(o["info"]["credit"])
+        if dict(have) != want:
+            return False, f"{f['action']} credits {dict((k, s(v)) for k, v in have.items())} vs answer key {f['amounts']}"
     return True, "amounts match the answer key"
 
 

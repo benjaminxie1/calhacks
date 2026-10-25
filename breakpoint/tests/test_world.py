@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Float
 
-from bp import calendar, db, models
+from bp import calendar, cam, db, models
 from bp.money import D
 from bp.sources.api import KEYS, KeyRejected, SourceClient, make_app
 from bp.world.generate import build
@@ -21,39 +21,45 @@ def test_T1_determinism(tmp_path):
     assert h1 == h2
     assert (tmp_path / "a" / "booking.jsonl").read_bytes() == (tmp_path / "b" / "booking.jsonl").read_bytes()
     _, h3 = build(43, out=tmp_path / "c")
-    assert h3["orders.jsonl"] != h1["orders.jsonl"]
+    assert h3["centers.jsonl"] != h1["centers.jsonl"]
 
 
 def test_T2_true_world_consistency(store):
-    """R3: positions rebuilt from true trades plus corporate actions equal the custodian's true positions every day."""
-    pos: dict = defaultdict(Decimal)
-    by_settle = defaultdict(list)
+    """R3: every true statement is exactly what its lease calls for, and the true books carry it."""
+    assert len(calendar.business_days()) == 83
+    assert len(store.leases) == 40 and len(store.landlords) == 12 and len(store.statements) == 40
+    true_books: dict = defaultdict(Decimal)
     for t in store.truth:
-        by_settle[t.settle_date].append(t)
-    for d in calendar.business_days():
-        for t in by_settle.get(d, []):
-            for p in t.postings:
-                if p.account.startswith("client:") and p.asset != "USD" and p.account.count(":") == 1:
-                    pos[(p.account.split(":")[1], p.asset)] += p.amount
-        cust = store.custodian_positions(d)
-        mine = {k: v for k, v in pos.items() if v != 0}
-        assert mine == cust, f"positions diverge on {d}"
-    assert len(calendar.business_days()) == 81
-    assert len(store.accounts) == 200 and len(store.symbols) == 40
-    assert 20000 <= len(store.orders) <= 26000
+        for p in t.postings:
+            true_books[p.account] += p.amount
+    for st in store.truth_statements:
+        lease = store.lease(st.lease_id)
+        tax = store.tax_record(store.center(lease.center_id).apn)
+        found = cam.findings(st, lease, tax, store.cleared_estimates(lease.lease_id, 2025))
+        assert {k for k in found if k != "rounding"} == set(), (st.lease_id, found)
+        assert st.tenant_total == sum((l.tenant_amount for l in st.lines), D(0))
+        sent = cam.findings(store.statement(st.statement_id), lease, tax, store.cleared_estimates(lease.lease_id, 2025))
+        rounding = sent["rounding"]["amount"] if sent.get("rounding", {}).get("harmless") else D(0)  # accepted per SOP
+        assert true_books[f"lease:{lease.lease_id}:expense"] == st.tenant_total + rounding
+        # every clause the abstract quotes appears word for word in the lease text
+        text = store.lease_text(lease.lease_id)
+        assert all(c.quote in text for c in lease.clauses.values()), lease.lease_id
+    showcase = next(x for x in store.truth_statements if x.lease_id == "LSE-007")
+    assert showcase.tenant_total == D("24127.50")  # the CAM core sample's answer
 
 
 def test_T3_answer_key_completeness(store):
-    """R4: every injected break has a key row with records and the expected fix."""
+    """R4: every planted error has a key row with records and the expected fix."""
     ak = store.answer_key
     counts = defaultdict(int)
     for r in ak:
         row = models.AnswerKeyRow(**r)
         counts[row.type] += 1
         assert row.affected and row.expected_detection_keys and row.root_cause_source
-        if row.type != "H2":
+        if row.type != "rounding":
             assert row.expected_fix, row.break_id
-    assert dict(counts) == {"B1": 6, "B2": 6, "B3": 4, "B4": 3, "H2": 10, "N1": 2, "N2": 2}
+    assert dict(counts) == {"share": 4, "admin_fee": 5, "cap": 4, "capital": 4, "tax": 5, "estimates": 3,
+                            "gross_up": 2, "rounding": 6}
 
 
 def _float_annotations(model) -> list[str]:
@@ -73,7 +79,7 @@ def test_T5_no_floats(world_dir):
     bad += [f"{t.name}.{c.name}" for t in db.md.sorted_tables for c in t.columns if isinstance(c.type, Float)]
     assert not bad, bad
     import json
-    for name in ["booking.jsonl", "custodian_settlements.jsonl", "prices.jsonl"]:
+    for name in ["booking.jsonl", "statements.jsonl", "leases.jsonl", "payments.jsonl"]:
         with (world_dir / name).open() as f:
             for i, line in enumerate(f):
                 if i > 2000:
@@ -85,15 +91,16 @@ def test_T5_no_floats(world_dir):
 
 def test_sources_serve_by_date_and_reject_other_keys(store):
     """R2 / step 4: each service returns a given day's data and rejects other services' keys."""
-    d = date(2026, 7, 8)
-    for src, ep in [("oms", "orders"), ("executions", "executions"), ("custodian", "settlements"), ("bank", "transfers"),
-                    ("reference", "prices"), ("fees", "schedule"), ("directory", "people"), ("booking", "txns")]:
+    d = date(2026, 3, 3)  # the showcase statement arrives
+    for src, ep in [("leases", "abstracts"), ("statements", "received"), ("ap", "payments"), ("bank", "items"),
+                    ("county", "tax_records"), ("reference", "centers"), ("directory", "people"), ("booking", "txns")]:
         assert SourceClient(src, KEYS[src], store).get(ep, d)
-        other = KEYS["oms" if src != "oms" else "bank"]
+        other = KEYS["leases" if src != "leases" else "bank"]
         with pytest.raises(KeyRejected):
             SourceClient(src, other, store).get(ep, d)
     http = TestClient(make_app(store))
-    assert http.get("/oms/orders", params={"d": "2026-07-08"}, headers={"x-api-key": KEYS["oms"]}).status_code == 200
-    assert http.get("/oms/orders", params={"d": "2026-07-08"}, headers={"x-api-key": KEYS["bank"]}).status_code == 401
-    orders = http.get("/oms/orders", params={"d": "2026-07-08"}, headers={"x-api-key": KEYS["oms"]}).json()
-    assert orders and all(o["trade_date"] == "2026-07-08" for o in orders)
+    q = {"d": "2026-03-03"}
+    assert http.get("/statements/received", params=q, headers={"x-api-key": KEYS["statements"]}).status_code == 200
+    assert http.get("/statements/received", params=q, headers={"x-api-key": KEYS["bank"]}).status_code == 401
+    got = http.get("/statements/received", params=q, headers={"x-api-key": KEYS["statements"]}).json()
+    assert got and all(x["received_on"] == "2026-03-03" for x in got)

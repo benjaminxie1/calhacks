@@ -11,18 +11,21 @@ from bp.agents.tools import SCOPES, ALL_TOOLS, AgentTools, ToolDenied
 from bp.db import events, messages, proposals
 from bp.models import Action, Posting, Proposal
 from bp.money import D
+from bp.config import APPROVAL_LIMIT_USD as LIMIT
 
-DAY = date(2026, 7, 6)
+DAY = date(2026, 2, 3)
 
 
-def _proposal(pid, amount="120", action="fee_refund", calc="adjust", playbook=None, tamper_amount=None):
-    inputs = {"account_id": "ACC-0001", "charged": str(D(amount) + D("1")), "schedule": "1", "schedule_version": 2}
+def _proposal(pid, amount="120", action="fee_credit", calc="fee_credit", playbook=None, tamper_amount=None):
+    # at a 100% share the credit is simply billed fee minus allowed fee (10% of a $10 base)
+    inputs = {"statement_id": "STMT-T", "lease_id": "LSE-001", "billed_fee": str(D(amount) + D("1")), "base": "10",
+              "fee_pct": "10", "share_pct": "100"}
     out = calculators.run(calc, inputs)
     postings = [Posting(**p) for p in out["postings"]]
     amt = out["amount_usd"] if tamper_amount is None else D(tamper_amount)
     return Proposal(proposal_id=pid, case_id="CASE-T", action_name=action,
                     action=Action(type="journal_entry", template=calc), postings=postings, amount_usd=amt,
-                    calculator=calc, calc_inputs=inputs, source_ref="ORD-T", playbook=playbook, memo="test",
+                    calculator=calc, calc_inputs=inputs, source_ref="admin_fee:STMT-T", playbook=playbook, memo="test",
                     prepared_by="preparer-agent")
 
 
@@ -88,7 +91,7 @@ def test_T18_tampered_proposal(db):
 
 
 def test_T20_approval_limit(db):
-    """R17: a $501 proposal, or a new playbook, sent to the approver agent goes to the controller."""
+    """R17: a proposal $1 over the agent limit, or a new playbook, sent to the approver agent goes to the controller."""
     from bp.engine.workflow import Workflow
     from bp.playbooks import store as pbstore
     from bp.agents.learner import induct, load_history
@@ -98,15 +101,15 @@ def test_T20_approval_limit(db):
         pb = pb.model_copy(update={"status": "active"})
         pbstore.save(c, pb, "test", DAY)
         ref = {"id": pb.id, "version": pb.version, "branch": pb.branches[0].id}
-        approvals.create(c, _proposal("PRP-501", amount="501", playbook=ref), DAY)
-        approvals.create(c, _proposal("PRP-500", amount="500", playbook=ref), DAY)
-        assert approvals.route(c, "PRP-501", DAY) == "controller"
-        assert approvals.route(c, "PRP-500", DAY) == "approver"
+        approvals.create(c, _proposal("PRP-OVER", amount=str(LIMIT + 1), playbook=ref), DAY)
+        approvals.create(c, _proposal("PRP-AT", amount=str(LIMIT), playbook=ref), DAY)
+        assert approvals.route(c, "PRP-OVER", DAY) == "controller"
+        assert approvals.route(c, "PRP-AT", DAY) == "approver"
     with pytest.raises(approvals.PolicyViolation):
         with db.begin() as c:
-            approvals.decide(c, "PRP-501", approvals.APPROVER_AGENT, "approved", "try", DAY)
+            approvals.decide(c, "PRP-OVER", approvals.APPROVER_AGENT, "approved", "try", DAY)
     with db.begin() as c:
-        approvals.decide(c, "PRP-500", approvals.APPROVER_AGENT, "approved", "within policy", DAY)
+        approvals.decide(c, "PRP-AT", approvals.APPROVER_AGENT, "approved", "within policy", DAY)
         approvals.create(c, _proposal("PRP-NOPB", amount="10"), DAY)  # not from an active playbook
         assert approvals.route(c, "PRP-NOPB", DAY) == "controller"
         draft = pb.model_copy(update={"version": 2, "status": "draft"})
@@ -122,8 +125,8 @@ def test_T20_approval_limit(db):
         assert pbstore.get(c, pb.id, 2).status == "draft"
 
 
-EXPECTED_ROLE = {"B1": ("client_service", "notify"), "B2": ("client", "notify"), "B3": ("broker_desk", "request"),
-                 "N2": ("client", "request")}
+EXPECTED_ROLE = {"share": ("landlord", "notify"), "admin_fee": ("landlord", "notify"), "tax": ("landlord", "request"),
+                 "estimates": ("landlord", "notify"), "gross_up": ("landlord", "notify")}
 
 
 def test_T21_routing(quarter):
@@ -139,8 +142,8 @@ def test_T21_routing(quarter):
         cid = brk[ak["expected_detection_keys"][0]]
         got = [(m["to_role"], m["kind"]) for m in msgs if m["case_id"] == cid]
         assert (role, kind) in got, f"{ak['break_id']} {cid}: {got}"
-    names = {m["to_role"]: m["to_name"] for m in msgs}
-    assert names["client_service"] == "Alex Kim" and names["broker_desk"] == "Northgate Execution"
+    lse7 = {m["to_name"] for m in msgs if (m["meta"].get("account_id") == "LSE-007" and m["to_role"] == "landlord")}
+    assert lse7 == {"Rachel Kim (Mission Plaza Holdings LLC)"}
 
 
 def test_T22_follow_up_and_escalation(quarter):
@@ -150,7 +153,8 @@ def test_T22_follow_up_and_escalation(quarter):
     with quarter["eng"].connect() as c:
         msgs = [dict(r) for r in c.execute(select(messages).order_by(messages.c.msg_id)).mappings()]
     unanswered = [m for m in msgs if m["kind"] == "request" and not m["answered"]]
-    assert unanswered, "expected the non-paying client's cash call to stay unanswered"
+    assert unanswered, "expected Sierra Vista Realty's tax-bill request to stay unanswered"
+    assert all(m["meta"]["account_id"] == "LSE-031" for m in unanswered)
     req = unanswered[0]
     fu = [m for m in msgs if m["reply_to"] == req["msg_id"] and m["kind"] == "follow_up"]
     esc = [m for m in msgs if m["reply_to"] == req["msg_id"] and m["kind"] == "escalation"]

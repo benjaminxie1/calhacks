@@ -15,15 +15,15 @@ export default function Overview() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Open cases" value={o.open_cases} sub={`${o.by_status.needs_human || 0} need a human`}
           tone={o.by_status.needs_human ? "text-rose-600" : ""} />
-        <Stat label="Dollars at risk" value={money(o.dollars_at_risk, 0)} sub="open cases, absolute" />
+        <Stat label="Overcharges found" value={money(o.overcharge_found, 0)} sub={`${money(o.credits_posted, 0)} credited · ${money(o.dollars_at_risk, 0)} in open cases`} />
         <Stat label="Auto-resolution" value={o.auto_resolution_rate === null ? "—" : `${o.auto_resolution_rate}%`}
           sub={`${o.auto_resolved} of ${o.total_cases} cases, no human`} tone="text-emerald-700" />
         <Stat label="Median time to resolve" value={o.median_days_to_resolve === null ? "—" : `${o.median_days_to_resolve} bd`}
           sub="business days, completed cases" />
-        <Stat label="Harmless auto-cleared" value={o.harmless_auto_cleared} sub="T+1 timing and ≤ $0.01 rounding" />
+        <Stat label="Harmless auto-cleared" value={o.harmless_auto_cleared} sub="printed totals within $1 (rounding)" />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="Breaks detected per day" className="lg:col-span-2">
+        <Card title="Findings per day" className="lg:col-span-2">
           <div className="h-64">
             <ResponsiveContainer>
               <BarChart data={o.series} margin={{ left: -20 }}>
@@ -32,7 +32,7 @@ export default function Overview() {
                 <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="breaks" stackId="a" fill="#e11d48" name="breaks" />
+                <Bar dataKey="breaks" stackId="a" fill="#e11d48" name="findings" />
                 <Bar dataKey="harmless" stackId="a" fill="#94a3b8" name="harmless (auto-cleared)" />
               </BarChart>
             </ResponsiveContainer>
@@ -63,11 +63,11 @@ export default function Overview() {
             ))}
           </div>
         </Card>
-        <Card title="Latest breaks" className="lg:col-span-2" right={<Link to="/breaks" className="text-xs text-blue-700">all breaks →</Link>}>
+        <Card title="Latest findings" className="lg:col-span-2" right={<Link to="/breaks" className="text-xs text-blue-700">all findings →</Link>}>
           <Table rows={recent} rowKey={(r) => r.break_id} cols={[
             { key: "detected_on", label: "Detected", mono: true },
             { key: "type", label: "Type" },
-            { key: "account_id", label: "Account", mono: true },
+            { key: "store", label: "Store" },
             { key: "amount_usd", label: "Amount", right: true, render: (r) => money(r.amount_usd) },
             { key: "case_id", label: "Case", render: (r) => <CaseLink id={r.case_id} /> },
             { key: "status_label", label: "Status", render: (r) => <Badge status={r.status_label} /> },

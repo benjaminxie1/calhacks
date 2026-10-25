@@ -1,7 +1,7 @@
 """Case workflow: runs every open break through the agent flow.
 
     matcher -> investigator -> playbook fits?
-       yes: preparer -> approval (agent <= $500, else controller) -> executor -> verify
+       yes: preparer -> approval (agent <= $2,500, else controller) -> executor -> verify
        no:  needs human -> teach mode -> learner drafts -> controller approves -> library
 
 Case statuses: new, investigating, waiting, awaiting_approval, completed,
@@ -28,17 +28,13 @@ from bp.playbooks.library import ACTIONS
 from bp.recon import matcher as M
 
 OPEN = ("new", "investigating", "waiting", "awaiting_approval")
-BOOTSTRAP_DAY = date(2026, 6, 30)
+BOOTSTRAP_DAY = date(2026, 1, 30)
 
-# What the ops lead teaches for each novel case in scripted mode (the demo's "Dana" answers).
+# What the lease admin lead teaches for each novel case in scripted mode (the demo's "Dana" answers).
 SCRIPTED_LESSONS = {
-    M.K_POS: {"trusted_source": "custodian", "actions": ["split_adjust"], "fact": "split_on_symbol",
-              "note": "Custodian applied the split; our corporate-action job didn't. Multiply every holder's position "
-                      "by the ratio, divide cost per share, no cash impact."},
-    M.K_BANK: {"trusted_source": "bank", "actions": ["reverse_deposit", "book_receivable", "request_funds"],
-               "fact": "bank_status_returned",
-               "note": "The bank is right: the deposit bounced. Reverse it, book what the client owes as a receivable, "
-                       "and ask the client for funds. Controller decides on liquidation if unpaid after 3 days."},
+    M.K_GROSS: {"trusted_source": "lease", "actions": ["gross_up_credit", "dispute_notice"], "fact": "gross_up_not_in_lease",
+                "note": "Our lease has no gross-up clause, so the landlord can't scale janitorial and utilities up to 95% "
+                        "occupancy. Credit our share of the whole gross-up and send the landlord a dispute notice."},
 }
 
 
@@ -57,14 +53,15 @@ class Workflow:
 
     # ------------------------------------------------------------------ setup
     def bootstrap(self, conn) -> None:
-        """Induction from Q2 history + SOP; the controller approves the drafts before July opens."""
+        """Induction from last season's cases + SOP; the controller approves the drafts before the season opens."""
         if pbstore.all_rows(conn):
             return
         cases_, sop = load_history()
         for pb in induct(cases_, sop, BOOTSTRAP_DAY, conn):
-            pbstore.save(conn, pb, "learner", BOOTSTRAP_DAY, note=f"induction draft from {len(cases_)} Q2 cases + SOP.md")
+            pbstore.save(conn, pb, "learner", BOOTSTRAP_DAY,
+                         note=f"induction draft from {len(cases_)} cases from last season + SOP.md")
             self.approve_playbook(conn, pb.id, pb.version, approvals.CONTROLLER, BOOTSTRAP_DAY,
-                                  "reviewed induction draft against Q2 tickets and the SOP")
+                                  "reviewed induction draft against last season's disputes and the SOP")
 
     def mode(self, conn) -> dict:
         r = conn.execute(select(sim_state.c.controller_mode, sim_state.c.teach_mode)).first()
@@ -106,7 +103,8 @@ class Workflow:
             .order_by(breaks.c.break_id)).mappings()]
         n = 0
         for b in rows:
-            group = (f"{b['break_key']}:{b['symbol']}:{b['detected_on']}" if b["break_key"] == M.K_POS
+            # one landlord grossing up several of our stores in the same mailing is one case
+            group = (f"{b['break_key']}:{b['symbol']}:{b['detected_on']}" if b["break_key"] == M.K_GROSS
                      else b["detection_key"])
             cid = conn.execute(select(cases.c.case_id).where(cases.c.group_ref == group)).scalar()
             if not cid:
@@ -249,22 +247,24 @@ class Workflow:
 
     def _msg_facts(self, conn, case, brks, name) -> dict:
         b = brks[0]
-        f = (case.get("facts") or {}).get(b["break_id"], {})
-        if name == "notify_client_service":
-            return {"order_id": b["ref"], "account_id": b["account_id"], "executions_qty": f.get("executions_qty"),
-                    "order_qty": f.get("order_qty")}
-        if name == "notify_client":
-            refund = D(f.get("ledger_fee", "0")) - D(f.get("schedule_fee", "0"))
-            return {"order_id": b["ref"], "refund": s(refund)}
-        if name == "request_info_broker":
-            dup = next((e.exec_id for e in self.src("executions").executions_for(b["ref"]) if e.poss_dup), None)
-            return {"order_id": b["ref"], "exec_id": dup}
-        if name == "request_funds":
-            owed = conn.execute(text("SELECT coalesce(-sum(amount), 0) FROM ledger_lines WHERE account = :a"),
-                                {"a": f"client:{b['account_id']}:receivable"}).scalar()
-            t = next(x for x in self.src("bank").bank_transfers_asof(case["updated_on"]) if x.transfer_id == b["ref"])
-            return {"transfer_id": t.transfer_id, "amount": s(t.amount), "return_code": t.return_code, "owed": s(D(owed))}
-        return {"account_id": b["account_id"], "symbol": b["symbol"]}
+        st = self.src("statements").statement(b["ref"])
+        lease = self.src("leases").lease(st.lease_id)
+        clause = {M.K_SHARE: "share", M.K_FEE: "admin_fee", M.K_CAP: "cap", M.K_CAPITAL: "exclusions", M.K_TAX: "taxes",
+                  M.K_GROSS: "reconciliation", M.K_EST: "reconciliation"}.get(b["break_key"], "audit")
+        sec = lease.clauses.get(clause) or lease.clauses["audit"]
+        credit = sum((D(r.amount_usd) for r in conn.execute(select(proposals.c.amount_usd).where(
+            proposals.c.case_id == case["case_id"], proposals.c.status == "executed"))), D(0))
+        out = {"statement_id": st.statement_id, "lease_id": lease.lease_id, "store": lease.store,
+               "landlord": self.src("reference").landlord(st.landlord_id).name, "year": st.year,
+               "finding": b["reason"], "section": sec.section, "credit": s(credit),
+               "audit_section": lease.clauses["audit"].section, "audit_window_days": lease.audit_window_days,
+               "stores": len(brks)}
+        if name == "request_tax_bills":
+            center = self.src("reference").center(lease.center_id)
+            out.update({"apn": center.apn, "county": center.county})
+        if name == "send_payment_proof":
+            out.update({"payments": len(self.src("ap").estimate_payments(lease.lease_id, st.year))})
+        return out
 
     # ------------------------------------------------------------------ verify and completion
     def verify(self, conn, case: dict, brks: list[dict], d: date) -> bool:

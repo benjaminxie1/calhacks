@@ -21,8 +21,8 @@ function SourceCompare({ b }) {
       </div>
       <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${vals.length}, minmax(0, 1fr))` }}>
         {vals.map(([k, v]) => (
-          <div key={k} className={cx("rounded-md px-3 py-2", differ && k === "ledger" ? "bg-rose-50 ring-1 ring-rose-200" : "bg-slate-50")}>
-            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{k.replace("_", " ")}</div>
+          <div key={k} className={cx("rounded-md px-3 py-2", differ && k === "statement" ? "bg-rose-50 ring-1 ring-rose-200" : "bg-slate-50")}>
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{({ statement: "landlord billed", lease: "lease allows", county: "county bill", ap: "we paid (bank-cleared)", recomputed: "line-by-line" })[k] || k.replace("_", " ")}</div>
             <div className="num font-mono text-lg">{isNaN(v) ? String(v) : num(v)}</div>
           </div>
         ))}

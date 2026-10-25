@@ -2,8 +2,8 @@
 
 A proposal's amounts must match its calculator. No one approves their own
 proposal. An approval stores the SHA-256 of the proposal it approved. The approver
-agent may only approve proposals of $500 or less from active playbooks that move no
-client money; everything else goes to the controller.
+agent may only approve proposals at or under the agent limit (config.APPROVAL_LIMIT_USD)
+from active playbooks that move no money; everything else goes to the controller.
 """
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def agent_eligible(conn, row: dict) -> tuple[bool, str]:
     if D(row["amount_usd"]) > config.APPROVAL_LIMIT_USD:
         return False, f"amount ${dstr(D(row['amount_usd']))} is over the ${config.APPROVAL_LIMIT_USD} agent limit"
     if body["action"]["type"] == "transfer":
-        return False, "client money movement needs the controller"
+        return False, "money movement needs the controller"
     if not playbook_active(conn, body.get("playbook")):
         return False, "not from an active playbook"
     return True, "within agent policy"

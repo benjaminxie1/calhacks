@@ -24,12 +24,11 @@ from bp.agents import llm
 from bp.agents.events import emit
 from bp.playbooks import conditions
 from bp.playbooks import store as pbstore
-from bp.playbooks.schema import Branch, Key, Modifier, Playbook, Provenance
+from bp.playbooks.schema import Branch, Key, Playbook, Provenance
 from bp.recon.context import FACTS, from_jsonable
 
 ACTOR = "learner"
-TRUST_WORDS = {"executions": "executions", "custodian": "custodian", "fee_schedule": "schedule", "bank": "bank",
-               "ledger": "ledger", "corporate_actions": "split"}
+TRUST_WORDS = {"lease": "lease", "county": "county", "statement": "billed", "ap": "estimates", "bank": "cleared"}
 
 
 class LearnError(ValueError):
@@ -49,7 +48,7 @@ def key_from_name(key_name: str) -> Key:
 
 def _candidates(group: list[dict], trusted: str | None) -> list[tuple[tuple, str]]:
     names = sorted(set.intersection(*[set(f) for f in group]))
-    names = [n for n in names if not n.startswith("client_already") and all(f[n] is not None for f in group)]
+    names = [n for n in names if all(f[n] is not None for f in group)]
     bools = [n for n in names if all(isinstance(f[n], bool) for f in group)]
     nums = [n for n in names if all(isinstance(f[n], Decimal) for f in group)]
     ratios = [n for n in nums if n.endswith("_ratio")]
@@ -167,23 +166,21 @@ def induct(cases: list[dict], sop: str, d: date | None = None, conn=None) -> lis
             branches.append(Branch(id=bid, when=expr, trust=trust, actions=list(actions), test=first["facts"],
                                    provenance=Provenance(taught_by=first["resolution"]["resolved_by"],
                                                          from_case=first["case_id"])))
-        mods = []
-        if "client_already_notified" in context and any("notify_client_service" in b.actions for b in branches):
-            mods.append(Modifier(when="client_already_notified", skip=["notify_client_service"]))
         pb = Playbook(id=playbook_id_for(key_name), version=1, status="draft", key=key_from_name(key_name),
-                      context=context, branches=branches, modifiers=mods)
+                      context=context, branches=branches)
         out.append(pb)
         if conn is not None:
             emit(conn, ACTOR, "playbook_drafted",
-                 f"induction: {len(cs)} Q2 cases for {key_name} -> {len(branches)} branch(es)",
+                 f"induction: {len(cs)} cases from last season for {key_name} -> {len(branches)} branch(es)",
                  inputs={"playbook": pb.id, "cases": [c["case_id"] for c in cs]},
                  evidence=[{"case": c["case_id"]} for c in cs] + [{"doc": "SOP.md"}], sim_date=d)
     return out
 
 
 def _branch_name(actions) -> str:
-    names = {"reverse_unfilled": "partial-fill", "reverse_duplicate": "duplicate-report", "fee_refund": "stale-schedule",
-             "post_dividend": "dividend-missing", "split_adjust": "split", "reverse_deposit": "ach-return"}
+    names = {"share_credit": "occupied-area-share", "fee_credit": "fee-over-limit", "cap_credit": "cap-not-applied",
+             "capital_credit": "capital-excluded", "tax_credit": "tax-above-county", "estimates_credit": "estimates-missed",
+             "gross_up_credit": "gross-up-not-allowed"}
     for a in actions:
         if a in names:
             return names[a]
@@ -191,7 +188,7 @@ def _branch_name(actions) -> str:
 
 
 def load_history() -> tuple[list[dict], str]:
-    cases = json.loads((config.DATA / "history" / "q2_cases.json").read_text())
+    cases = json.loads((config.DATA / "history" / "cases_2025.json").read_text())
     sop = (config.DATA / "SOP.md").read_text()
     return cases, sop
 

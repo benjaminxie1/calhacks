@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 
 from bp.sources.store import SourceStore, get_store
 
-SOURCES = ["oms", "executions", "booking", "custodian", "bank", "reference", "fees", "directory"]
+SOURCES = ["leases", "statements", "ap", "bank", "county", "reference", "booking", "directory"]
 KEYS = {s: "bpk_" + s + "_" + hashlib.sha256(f"breakpoint:{s}".encode()).hexdigest()[:20] for s in SOURCES}
 
 
@@ -32,24 +32,14 @@ def _j(models):
 def handlers(st: SourceStore) -> dict:
     """source -> {endpoint: fn(d) -> json}"""
     return {
-        "oms": {"orders": lambda d: _j(st.oms_orders(d))},
-        "executions": {"executions": lambda d: _j(st.broker_executions(d))},
+        "leases": {"abstracts": lambda d: _j(st.leases)},
+        "statements": {"received": lambda d: _j(st.statements_received(d)),
+                       "asof": lambda d: _j(st.statements_asof(d))},
+        "ap": {"payments": lambda d: _j([p for p in st.payments if p.paid_on <= d])},
+        "bank": {"items": lambda d: _j([b for b in st.bank if b.status_date <= d])},
+        "county": {"tax_records": lambda d: _j(st.tax_records)},
+        "reference": {"centers": lambda d: _j(st.centers), "landlords": lambda d: _j(st.landlords)},
         "booking": {"txns": lambda d: _j(st.booking_feed(d))},
-        "custodian": {
-            "settlements": lambda d: _j(st.custodian_settlements(d)),
-            "positions": lambda d: [{"account_id": a, "symbol": s, "qty": str(q)}
-                                    for (a, s), q in sorted(st.custodian_positions(d).items())],
-            "cash": lambda d: [{"account_id": a, "balance": str(b)} for a, b in sorted(st.custodian_cash(d).items())],
-            "activity": lambda d: _j(st.custodian_cash_activity(d)),
-        },
-        "bank": {"transfers": lambda d: _j(st.bank_transfers_asof(d))},
-        "reference": {
-            "prices": lambda d: [{"symbol": s.symbol, "close_px": str(st.price(d, s.symbol))} for s in st.symbols],
-            "corporate_actions": lambda d: _j(st.corporate_actions_asof(d)),
-            "symbols": lambda d: _j(st.symbols),
-        },
-        "fees": {"schedule": lambda d: st.fee_schedule_on(d).model_dump(mode="json"),
-                 "accounts": lambda d: _j(st.accounts)},
         "directory": {"people": lambda d: _j(st.people)},
     }
 
@@ -67,7 +57,7 @@ class SourceClient:
 
 
 def make_app(store: SourceStore | None = None) -> FastAPI:
-    app = FastAPI(title="Meridian source systems (mock)")
+    app = FastAPI(title="Golden Wok source systems (mock)")
     st = store or get_store()
     hs = handlers(st)
     for source, eps in hs.items():
