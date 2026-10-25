@@ -42,6 +42,9 @@ export const STAGE_PARAMS: Record<Stage, Partial<Params>> = {
 // no floor, 13% at 0.7, 9% at 1.0).
 function sizeParams(stage: Stage, players: number): Partial<Params> {
   if ((stage === "swiss" || stage === "bracket") && players > 0 && players <= 3) return { seedFloor: 1 };
+  // 6+ bots is the casual table size, where floor-style bids lost their
+  // live A/B (cheapFloor, -5 pts): play as in casual there.
+  if ((stage === "swiss" || stage === "bracket") && players >= 6) return { seedFloor: 0 };
   return {};
 }
 
