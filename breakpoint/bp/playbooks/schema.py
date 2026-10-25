@@ -51,7 +51,7 @@ class Modifier(Strict):
 
 
 class Approval(Strict):
-    auto_under_usd: int = 500
+    auto_under_usd: int = 2500
     otherwise: Literal["controller"] = "controller"
 
 

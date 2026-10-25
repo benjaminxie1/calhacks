@@ -1,10 +1,10 @@
-"""Business-day calendar for Q3 2026 + October, and period-close rules."""
+"""Business-day calendar for the 2026 CAM reconciliation season (Feb-May), and period-close rules."""
 from datetime import date, timedelta
 from functools import lru_cache
 
-START = date(2026, 7, 1)
-END = date(2026, 10, 23)
-HOLIDAYS = {date(2026, 7, 3), date(2026, 9, 7)}  # Independence Day (observed), Labor Day
+START = date(2026, 2, 2)
+END = date(2026, 5, 29)
+HOLIDAYS = {date(2026, 2, 16), date(2026, 5, 25)}  # Presidents Day, Memorial Day
 
 
 def is_business_day(d: date) -> bool:

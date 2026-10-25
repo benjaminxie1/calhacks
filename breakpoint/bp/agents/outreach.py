@@ -22,7 +22,7 @@ from bp.db import messages
 from bp.money import D, s
 
 ACTOR = "outreach"
-NO_REPLY = {"ACC-0052"}  # this client never answers the cash call (shows escalation)
+NO_REPLY = {"LL-SVR"}  # this landlord never answers a request (shows escalation); mirrors bp.world.generate.NO_REPLY
 
 
 class Draft(BaseModel):
@@ -43,8 +43,11 @@ class Outreach:
         return f"MSG-{conn.execute(text('SELECT count(*) FROM messages')).scalar() + 1:05d}"
 
     def recipient(self, role: str, account_id: str | None = None) -> str:
-        p = self.src("directory").person(role)
-        return f"{account_id} holder" if role == "client" and account_id else p.name
+        """account_id is the lease: a landlord message goes to that landlord's property manager."""
+        if role == "landlord" and account_id:
+            ll = self.src("reference").landlord(self.src("leases").lease(account_id).landlord_id)
+            return f"{ll.contact} ({ll.name})"
+        return self.src("directory").person(role).name
 
     def send(self, conn, case: dict, role: str, kind: str, purpose: str, facts: dict, d: date,
              account_id: str | None = None, reply_to: str | None = None) -> str:
@@ -101,20 +104,23 @@ def _template(kind, role, purpose, f, case) -> str:
     if kind == "escalation":
         return (f"Escalating {ref}: {f.get('to')} has not replied to {f.get('original_request')} after 3 business days. "
                 "This needs a controller decision.")
-    if role == "client_service":
-        return (f"{ref}: order {f.get('order_id')} for {f.get('account_id')} only filled {f.get('executions_qty')} of "
-                f"{f.get('order_qty')} shares. The booking has been corrected; please send the client a corrected confirm.")
-    if role == "broker_desk":
-        return (f"{ref}: we received execution report {f.get('exec_id')} for order {f.get('order_id')} twice "
-                "(second copy flagged PossDup). Please confirm it was a re-send and there was only one fill.")
-    if role == "client" and purpose.startswith("fee"):
-        return (f"We refunded ${f.get('refund')} of commission on order {f.get('order_id')}: the trade was charged under "
-                f"the previous fee schedule. It will appear on your next statement.")
-    if role == "client":
-        return (f"Your ACH deposit {f.get('transfer_id')} of ${f.get('amount')} was returned by your bank "
-                f"({f.get('return_code')}). Your account now owes ${f.get('owed')}. Please send funds within 3 business days.")
-    if role == "custodian_ops":
-        return f"{ref}: please confirm the position and settlement details for {f.get('account_id')} {f.get('symbol')}."
+    if purpose == "dispute notice":
+        stores = f" across {f.get('stores')} of our stores" if str(f.get("stores", "1")) != "1" else ""
+        return (f"Re: {f.get('year')} CAM reconciliation {f.get('statement_id')} ({f.get('store')}). Under Section "
+                f"{f.get('section')} of our lease we dispute this item{stores}: {f.get('finding')}. Our share of the "
+                f"overcharge is ${f.get('credit')}; please apply it as a credit against the next rent due. This notice "
+                f"is given within the {f.get('audit_window_days')}-day period in Section {f.get('audit_section')}.")
+    if purpose == "request_tax_bills":
+        return (f"Re: {f.get('statement_id')} ({f.get('store')}). The statement's real estate taxes exceed the "
+                f"{f.get('county')} County bill for APN {f.get('apn')}. Under Section {f.get('section')} only taxes "
+                "actually levied and paid pass through. Please send the 2025-26 tax bills and proof of payment.")
+    if purpose == "send payment proof":
+        return (f"Re: {f.get('statement_id')} ({f.get('store')}). Your statement credits fewer CAM estimate payments "
+                f"than we made: all {f.get('payments')} monthly payments for {f.get('year')} cleared our bank "
+                f"(confirmations attached). Please credit the missing ${f.get('credit')}.")
+    if role == "accounts_payable":
+        return (f"{ref}: please hold ${f.get('credit')} from the {f.get('landlord')} balance due on "
+                f"{f.get('statement_id')} while the dispute is open.")
     return f"{ref}: {purpose}"
 
 
@@ -131,7 +137,7 @@ class Personas:
             role = req["to_role"]
             sla = self.src.store.person(role).reply_sla_days
             acct = req["meta"].get("account_id")
-            if role == "client" and acct in NO_REPLY:
+            if role == "landlord" and acct and self.src.store.lease(acct).landlord_id in NO_REPLY:
                 continue
             if bd_between(req["sent_on"], d) < sla:
                 continue
@@ -140,7 +146,7 @@ class Personas:
             def offline():
                 return PersonaReply(confirms=truth["confirms"], body=truth["text"])
             rep, _ = llm.decide(f"persona {req['to_name']} ({role})",
-                                "You are role-playing this person replying to Meridian's message. Answer only from the "
+                                "You are role-playing this person replying to Golden Wok's message. Answer only from the "
                                 "true-world facts provided. Be brief and businesslike.",
                                 {"message": req["body"], "true_world": truth}, PersonaReply, offline)
             mid = f"MSG-{conn.execute(text('SELECT count(*) FROM messages')).scalar() + 1:05d}"
@@ -157,15 +163,9 @@ class Personas:
     def _truth(self, req: dict) -> dict:
         f = req["meta"].get("facts", {})
         st = self.src.store
-        if req["to_role"] == "broker_desk":
-            oid = f.get("order_id")
-            fills = {e.exec_id: e for e in st.executions_for(oid) if e.exec_type == "new"}
-            qty = sum((e.fill_qty for e in fills.values()), D(0))
-            return {"confirms": True, "order_id": oid, "unique_fills": len(fills), "filled_qty": s(qty),
-                    "text": f"Confirmed. {f.get('exec_id')} was a re-send (PossDupFlag=Y). Order {oid} had "
-                            f"{len(fills)} fill for {s(qty)} shares. Please reverse the duplicate."}
-        if req["to_role"] == "client":
-            return {"confirms": True, "text": f"Sorry about that. I've sent ${f.get('owed')} by wire today."}
-        if req["to_role"] == "custodian_ops":
-            return {"confirms": True, "text": "Confirmed: our statement reflects the settled position as reported."}
+        if req["to_role"] == "landlord" and req["meta"].get("purpose") == "request_tax_bills":
+            rec = st.tax_record(f.get("apn"))
+            return {"confirms": True, "apn": f.get("apn"), "county_tax": s(rec.total_tax),
+                    "text": f"Attached are the {rec.tax_year} tax bills for APN {rec.apn}: ${rec.total_tax:,} paid in two "
+                            "installments. Our statement carried the prior estimate; we'll apply the difference as a credit."}
         return {"confirms": True, "text": "Acknowledged."}

@@ -2,12 +2,11 @@
 
 Loads a generated world directory and answers "what does system X say as of day d".
 Live injections are applied as overlays. Nothing here is the ledger: the ledger is
-Postgres, and the booking feed here is what the booking system sends to it.
+Postgres, and the booking feed here is what AP sends to it.
 """
 from __future__ import annotations
 
 import json
-from bisect import bisect_right
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
@@ -15,11 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from bp import config
-from bp.calendar import business_days
-from bp.models import (
-    Account, BankTransfer, CorporateAction, CustodianCashActivity, CustodianSettlement, Execution, FeeSchedule,
-    LedgerTxn, Order, Person, Price, SymbolRef,
-)
+from bp.models import BankItem, Center, EstimatePayment, Landlord, Lease, LedgerTxn, Person, Statement, TaxRecord
 from bp.money import D
 
 
@@ -37,18 +32,15 @@ def _load(path: Path, model):
 class SourceStore:
     def __init__(self, world_dir: Path):
         self.dir = world_dir
-        self.accounts: list[Account] = _load(world_dir / "accounts.jsonl", Account)
-        self.symbols: list[SymbolRef] = _load(world_dir / "symbols.jsonl", SymbolRef)
-        self.prices: list[Price] = _load(world_dir / "prices.jsonl", Price)
-        self.corporate_actions: list[CorporateAction] = _load(world_dir / "corporate_actions.jsonl", CorporateAction)
-        self.fee_schedules: list[FeeSchedule] = _load(world_dir / "fee_schedules.jsonl", FeeSchedule)
+        self.landlords: list[Landlord] = _load(world_dir / "landlords.jsonl", Landlord)
+        self.centers: list[Center] = _load(world_dir / "centers.jsonl", Center)
+        self.leases: list[Lease] = _load(world_dir / "leases.jsonl", Lease)
         self.people: list[Person] = _load(world_dir / "people.jsonl", Person)
-        self.orders: list[Order] = _load(world_dir / "orders.jsonl", Order)
-        self.executions: list[Execution] = _load(world_dir / "executions.jsonl", Execution)
-        self.bank_transfers: list[BankTransfer] = _load(world_dir / "bank_transfers.jsonl", BankTransfer)
-        self.settlements: list[CustodianSettlement] = _load(world_dir / "custodian_settlements.jsonl", CustodianSettlement)
-        self.cash_activity: list[CustodianCashActivity] = _load(world_dir / "custodian_cash_activity.jsonl", CustodianCashActivity)
-        self.position_activity: list[dict] = _load(world_dir / "custodian_position_activity.jsonl", None)
+        self.tax_records: list[TaxRecord] = _load(world_dir / "tax_records.jsonl", TaxRecord)
+        self.payments: list[EstimatePayment] = _load(world_dir / "payments.jsonl", EstimatePayment)
+        self.bank: list[BankItem] = _load(world_dir / "bank.jsonl", BankItem)
+        self.statements: list[Statement] = _load(world_dir / "statements.jsonl", Statement)
+        self.truth_statements: list[Statement] = _load(world_dir / "truth_statements.jsonl", Statement)
         self.booking: list[LedgerTxn] = _load(world_dir / "booking.jsonl", LedgerTxn)
         self.truth: list[LedgerTxn] = _load(world_dir / "truth.jsonl", LedgerTxn)
         self.answer_key: list[dict] = _load(world_dir / "answer_key.jsonl", None)
@@ -57,114 +49,66 @@ class SourceStore:
 
     # ------------------------------------------------------------- indexes
     def _reindex(self) -> None:
-        self.order_by_id = {o.order_id: o for o in self.orders}
-        self.orders_by_day = defaultdict(list)
-        for o in self.orders:
-            self.orders_by_day[o.trade_date].append(o)
-        self.execs_by_order = defaultdict(list)
-        self.execs_by_day = defaultdict(list)
-        for e in self.executions:
-            self.execs_by_order[e.order_id].append(e)
-            self.execs_by_day[e.trade_date].append(e)
+        self.lease_by_id = {x.lease_id: x for x in self.leases}
+        self.center_by_id = {x.center_id: x for x in self.centers}
+        self.landlord_by_id = {x.landlord_id: x for x in self.landlords}
+        self.tax_by_apn = {x.apn: x for x in self.tax_records}
+        self.stmt_by_id = {x.statement_id: x for x in self.statements}
+        self.stmts_by_day = defaultdict(list)
+        for x in self.statements:
+            self.stmts_by_day[x.received_on].append(x)
+        self.payments_by_lease = defaultdict(list)
+        for p in self.payments:
+            self.payments_by_lease[p.lease_id].append(p)
+        self.bank_by_id = {b.payment_id: b for b in self.bank}
         self.booking_by_day = defaultdict(list)
         for t in self.booking:
             self.booking_by_day[t.date].append(t)
-        self.settle_by_day = defaultdict(list)
-        self.settle_by_ref = {}
-        for st in self.settlements:
-            self.settle_by_day[st.settle_date].append(st)
-            self.settle_by_ref[st.trade_ref] = st
-        self.px = {(p.date, p.symbol): p.close_px for p in self.prices}
-        self.tier = {a.account_id: a.tier for a in self.accounts}
-        self._snapshots()
 
-    def _snapshots(self) -> None:
-        """Custodian end-of-day statements: cumulative positions and cash per business day."""
-        days = business_days()
-        pos_delta = defaultdict(lambda: defaultdict(Decimal))
-        for st in self.settlements:
-            pos_delta[st.settle_date][(st.account_id, st.symbol)] += st.qty if st.side == "buy" else -st.qty
-        for pa in self.position_activity:
-            pos_delta[date.fromisoformat(pa["date"])][(pa["account_id"], pa["symbol"])] += D(pa["qty"])
-        cash_delta = defaultdict(lambda: defaultdict(Decimal))
-        self.cash_by_day = defaultdict(list)
-        for ca in self.cash_activity:
-            cash_delta[ca.date][ca.account_id] += ca.amount
-            self.cash_by_day[ca.date].append(ca)
-        self.pos_snap: dict[date, dict] = {}
-        self.cash_snap: dict[date, dict] = {}
-        pos: dict = defaultdict(Decimal)
-        cash: dict = defaultdict(Decimal)
-        for d in days:
-            for k, v in pos_delta.get(d, {}).items():
-                pos[k] += v
-            for k, v in cash_delta.get(d, {}).items():
-                cash[k] += v
-            self.pos_snap[d] = {k: v for k, v in pos.items() if v != 0}
-            self.cash_snap[d] = dict(cash)
-        self._days = list(days)
+    # ------------------------------------------------------------- 1. reference: centers and landlords
+    def center(self, center_id: str) -> Center:
+        return self.center_by_id[center_id]
 
-    def _asof(self, d: date) -> date | None:
-        i = bisect_right(self._days, d)
-        return self._days[i - 1] if i else None
+    def landlord(self, landlord_id: str) -> Landlord:
+        return self.landlord_by_id[landlord_id]
 
-    # ------------------------------------------------------------- 1. OMS
-    def oms_orders(self, on: date) -> list[Order]:
-        return self.orders_by_day.get(on, [])
+    # ------------------------------------------------------------- 2. lease administration
+    def lease(self, lease_id: str) -> Lease:
+        return self.lease_by_id[lease_id]
 
-    # ------------------------------------------------------------- 2. executions
-    def broker_executions(self, on: date) -> list[Execution]:
-        return self.execs_by_day.get(on, [])
+    def lease_text(self, lease_id: str) -> str:
+        p = self.dir / "leases" / f"{lease_id}.md"
+        return p.read_text() if p.exists() else ""
 
-    def executions_for(self, order_id: str) -> list[Execution]:
-        return self.execs_by_order.get(order_id, [])
+    # ------------------------------------------------------------- 3. landlord statements
+    def statements_received(self, on: date) -> list[Statement]:
+        return self.stmts_by_day.get(on, [])
 
-    # ------------------------------------------------------------- 3. booking feed
-    def booking_feed(self, on: date) -> list[LedgerTxn]:
-        return self.booking_by_day.get(on, [])
+    def statement(self, statement_id: str) -> Statement:
+        return self.stmt_by_id[statement_id]
 
-    # ------------------------------------------------------------- 4. custodian
-    def custodian_settlements(self, on: date) -> list[CustodianSettlement]:
-        return self.settle_by_day.get(on, [])
+    def statements_asof(self, asof: date) -> list[Statement]:
+        return [x for x in self.statements if x.received_on <= asof]
 
-    def custodian_positions(self, asof: date) -> dict[tuple[str, str], Decimal]:
-        d = self._asof(asof)
-        return self.pos_snap.get(d, {}) if d else {}
-
-    def custodian_cash(self, asof: date) -> dict[str, Decimal]:
-        d = self._asof(asof)
-        return self.cash_snap.get(d, {}) if d else {}
-
-    def custodian_cash_activity(self, on: date) -> list[CustodianCashActivity]:
-        return self.cash_by_day.get(on, [])
+    # ------------------------------------------------------------- 4. accounts payable
+    def estimate_payments(self, lease_id: str, year: int) -> list[EstimatePayment]:
+        return [p for p in self.payments_by_lease.get(lease_id, []) if p.period.startswith(str(year))]
 
     # ------------------------------------------------------------- 5. bank
-    def bank_transfers_asof(self, asof: date) -> list[BankTransfer]:
-        out = []
-        for t in self.bank_transfers:
-            if t.initiated_on > asof:
-                continue
-            if t.status == "returned" and t.status_date > asof:
-                t = t.model_copy(update={"status": "settled", "status_date": t.initiated_on, "return_code": None})
-            out.append(t)
-        return out
+    def bank_status(self, payment_id: str) -> BankItem | None:
+        return self.bank_by_id.get(payment_id)
 
-    # ------------------------------------------------------------- 6. reference
-    def price(self, d: date, symbol: str) -> Decimal:
-        dd = self._asof(d)
-        return self.px[(dd, symbol)]
+    def cleared_estimates(self, lease_id: str, year: int) -> Decimal:
+        return sum((p.amount for p in self.estimate_payments(lease_id, year)
+                    if (b := self.bank_by_id.get(p.payment_id)) and b.status == "cleared"), D(0))
 
-    def corporate_actions_asof(self, asof: date) -> list[CorporateAction]:
-        return [c for c in self.corporate_actions if c.ex_date <= asof]
+    # ------------------------------------------------------------- 6. county tax records
+    def tax_record(self, apn: str) -> TaxRecord | None:
+        return self.tax_by_apn.get(apn)
 
-    # ------------------------------------------------------------- 7. fee schedule
-    def fee_schedule_on(self, d: date) -> FeeSchedule:
-        return [s for s in self.fee_schedules if s.effective_from <= d][-1]
-
-    def fee_schedule_before(self, d: date) -> FeeSchedule | None:
-        cur = self.fee_schedule_on(d)
-        prior = [s for s in self.fee_schedules if s.version < cur.version]
-        return prior[-1] if prior else None
+    # ------------------------------------------------------------- 7. booking feed
+    def booking_feed(self, on: date) -> list[LedgerTxn]:
+        return self.booking_by_day.get(on, [])
 
     # ------------------------------------------------------------- 8. directory
     def person(self, role: str) -> Person:
@@ -175,12 +119,13 @@ class SourceStore:
         if inj_id in self.injected:
             return
         self.injected.append(inj_id)
-        self.orders += [Order(**x) for x in records.get("orders", [])]
-        self.executions += [Execution(**x) for x in records.get("executions", [])]
-        self.settlements += [CustodianSettlement(**x) for x in records.get("settlements", [])]
-        self.cash_activity += [CustodianCashActivity(**x) for x in records.get("cash_activity", [])]
-        self.booking += [LedgerTxn(**x) for x in records.get("booking", [])]
-        self.truth += [LedgerTxn(**x) for x in records.get("truth", [])]
+        for x in records.get("statements", []):
+            st = Statement(**x)
+            self.statements = [s for s in self.statements if s.statement_id != st.statement_id] + [st]
+        for key, rows in (("booking", records.get("booking", [])), ("truth", records.get("truth", []))):
+            for x in rows:
+                t = LedgerTxn(**x)
+                setattr(self, key, [y for y in getattr(self, key) if y.source_ref != t.source_ref] + [t])
         self.answer_key += records.get("answer_key", [])
         self._reindex()
 

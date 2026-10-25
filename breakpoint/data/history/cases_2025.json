@@ -1,0 +1,646 @@
+[
+ {
+  "case_id": "CASE-0110",
+  "closed_on": "2025-06-05",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "17222.6",
+   "lease_max_fee": "12868.11",
+   "lease_fee_pct": "5",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0130",
+  "closed_on": "2025-04-30",
+  "break_key": "statement-ap:estimates_credited",
+  "facts": {
+   "estimates_credited": "25388",
+   "estimates_cleared": "27696",
+   "shortfall": "2308",
+   "monthly_estimate": "2308",
+   "all_payments_cleared": true,
+   "shortfall_is_whole_payments": true
+  },
+  "resolution": {
+   "trust": "bank",
+   "actions": [
+    "estimates_credit",
+    "send_payment_proof"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Landlord credited 11 of 12 estimate payments; all 12 cleared our bank. Credited the missing payment and sent the bank confirmation."
+  }
+ },
+ {
+  "case_id": "CASE-0104",
+  "closed_on": "2025-03-14",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "10.09",
+   "lease_share_pct": "8.6",
+   "share_by_occupied_pct": "10.09",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0107",
+  "closed_on": "2025-04-30",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "21618.86",
+   "lease_max_fee": "16147.99",
+   "lease_fee_pct": "10",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0102",
+  "closed_on": "2025-06-06",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "11.80",
+   "lease_share_pct": "9.91",
+   "share_by_occupied_pct": "11.80",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0127",
+  "closed_on": "2025-05-22",
+  "break_key": "statement-ap:estimates_credited",
+  "facts": {
+   "estimates_credited": "32967",
+   "estimates_cleared": "35964",
+   "shortfall": "2997",
+   "monthly_estimate": "2997",
+   "all_payments_cleared": true,
+   "shortfall_is_whole_payments": true
+  },
+  "resolution": {
+   "trust": "bank",
+   "actions": [
+    "estimates_credit",
+    "send_payment_proof"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord credited 11 of 12 estimate payments; all 12 cleared our bank. Credited the missing payment and sent the bank confirmation."
+  }
+ },
+ {
+  "case_id": "CASE-0128",
+  "closed_on": "2025-04-06",
+  "break_key": "statement-ap:estimates_credited",
+  "facts": {
+   "estimates_credited": "31856",
+   "estimates_cleared": "34752",
+   "shortfall": "2896",
+   "monthly_estimate": "2896",
+   "all_payments_cleared": true,
+   "shortfall_is_whole_payments": true
+  },
+  "resolution": {
+   "trust": "bank",
+   "actions": [
+    "estimates_credit",
+    "send_payment_proof"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord credited 11 of 12 estimate payments; all 12 cleared our bank. Credited the missing payment and sent the bank confirmation."
+  }
+ },
+ {
+  "case_id": "CASE-0124",
+  "closed_on": "2025-04-10",
+  "break_key": "statement-county:property_tax",
+  "facts": {
+   "billed_tax": "94983",
+   "county_tax": "66422",
+   "county_record_found": true,
+   "lease_taxes_actually_paid": true
+  },
+  "resolution": {
+   "trust": "county",
+   "actions": [
+    "tax_credit",
+    "request_tax_bills"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Taxes billed above the county's bill for the parcel. Booked to the county figure and asked the landlord for the tax bills and proof of payment."
+  }
+ },
+ {
+  "case_id": "CASE-0120",
+  "closed_on": "2025-05-05",
+  "break_key": "statement-lease:capital_exclusion",
+  "facts": {
+   "line_amount": "95000",
+   "lease_excludes_capital": true,
+   "replacement_or_structural": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "capital_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Roof replacement / resurfacing billed as repairs. Capital costs are excluded by the lease. Credited our share."
+  }
+ },
+ {
+  "case_id": "CASE-0113",
+  "closed_on": "2025-03-10",
+  "break_key": "statement-lease:controllable_cap",
+  "facts": {
+   "controllable_billed": "259526",
+   "cap_limit": "244798",
+   "cap_pct": "5",
+   "cap_adjustment_billed": "0",
+   "cap_adjustment_missing": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "cap_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Controllable expenses rose more than the cap and the statement had no cap adjustment. Credited the excess."
+  }
+ },
+ {
+  "case_id": "CASE-0123",
+  "closed_on": "2025-04-26",
+  "break_key": "statement-county:property_tax",
+  "facts": {
+   "billed_tax": "49361",
+   "county_tax": "38564",
+   "county_record_found": true,
+   "lease_taxes_actually_paid": true
+  },
+  "resolution": {
+   "trust": "county",
+   "actions": [
+    "tax_credit",
+    "request_tax_bills"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Taxes billed above the county's bill for the parcel. Booked to the county figure and asked the landlord for the tax bills and proof of payment."
+  }
+ },
+ {
+  "case_id": "CASE-0129",
+  "closed_on": "2025-06-04",
+  "break_key": "statement-ap:estimates_credited",
+  "facts": {
+   "estimates_credited": "33198",
+   "estimates_cleared": "36216",
+   "shortfall": "3018",
+   "monthly_estimate": "3018",
+   "all_payments_cleared": true,
+   "shortfall_is_whole_payments": true
+  },
+  "resolution": {
+   "trust": "bank",
+   "actions": [
+    "estimates_credit",
+    "send_payment_proof"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord credited 11 of 12 estimate payments; all 12 cleared our bank. Credited the missing payment and sent the bank confirmation."
+  }
+ },
+ {
+  "case_id": "CASE-0109",
+  "closed_on": "2025-05-04",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "22174.83",
+   "lease_max_fee": "16309.04",
+   "lease_fee_pct": "10",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0115",
+  "closed_on": "2025-05-13",
+  "break_key": "statement-lease:controllable_cap",
+  "facts": {
+   "controllable_billed": "188286",
+   "cap_limit": "170293",
+   "cap_pct": "5",
+   "cap_adjustment_billed": "0",
+   "cap_adjustment_missing": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "cap_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Controllable expenses rose more than the cap and the statement had no cap adjustment. Credited the excess."
+  }
+ },
+ {
+  "case_id": "CASE-0116",
+  "closed_on": "2025-03-22",
+  "break_key": "statement-lease:controllable_cap",
+  "facts": {
+   "controllable_billed": "216914",
+   "cap_limit": "206999",
+   "cap_pct": "5",
+   "cap_adjustment_billed": "0",
+   "cap_adjustment_missing": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "cap_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Controllable expenses rose more than the cap and the statement had no cap adjustment. Credited the excess."
+  }
+ },
+ {
+  "case_id": "CASE-0112",
+  "closed_on": "2025-06-13",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "39382.54",
+   "lease_max_fee": "26734.21",
+   "lease_fee_pct": "12",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0101",
+  "closed_on": "2025-07-03",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "12.01",
+   "lease_share_pct": "10.21",
+   "share_by_occupied_pct": "12.01",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0125",
+  "closed_on": "2025-03-27",
+  "break_key": "statement-county:property_tax",
+  "facts": {
+   "billed_tax": "67191",
+   "county_tax": "58427",
+   "county_record_found": true,
+   "lease_taxes_actually_paid": true
+  },
+  "resolution": {
+   "trust": "county",
+   "actions": [
+    "tax_credit",
+    "request_tax_bills"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Taxes billed above the county's bill for the parcel. Booked to the county figure and asked the landlord for the tax bills and proof of payment."
+  }
+ },
+ {
+  "case_id": "CASE-0118",
+  "closed_on": "2025-05-31",
+  "break_key": "statement-lease:capital_exclusion",
+  "facts": {
+   "line_amount": "30000",
+   "lease_excludes_capital": true,
+   "replacement_or_structural": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "capital_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Roof replacement / resurfacing billed as repairs. Capital costs are excluded by the lease. Credited our share."
+  }
+ },
+ {
+  "case_id": "CASE-0119",
+  "closed_on": "2025-06-09",
+  "break_key": "statement-lease:capital_exclusion",
+  "facts": {
+   "line_amount": "94000",
+   "lease_excludes_capital": true,
+   "replacement_or_structural": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "capital_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Roof replacement / resurfacing billed as repairs. Capital costs are excluded by the lease. Credited our share."
+  }
+ },
+ {
+  "case_id": "CASE-0121",
+  "closed_on": "2025-03-09",
+  "break_key": "statement-lease:capital_exclusion",
+  "facts": {
+   "line_amount": "105000",
+   "lease_excludes_capital": true,
+   "replacement_or_structural": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "capital_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Roof replacement / resurfacing billed as repairs. Capital costs are excluded by the lease. Credited our share."
+  }
+ },
+ {
+  "case_id": "CASE-0111",
+  "closed_on": "2025-04-17",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "34644.86",
+   "lease_max_fee": "27319.7",
+   "lease_fee_pct": "12",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0114",
+  "closed_on": "2025-04-30",
+  "break_key": "statement-lease:controllable_cap",
+  "facts": {
+   "controllable_billed": "202985",
+   "cap_limit": "193345",
+   "cap_pct": "5",
+   "cap_adjustment_billed": "0",
+   "cap_adjustment_missing": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "cap_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Controllable expenses rose more than the cap and the statement had no cap adjustment. Credited the excess."
+  }
+ },
+ {
+  "case_id": "CASE-0122",
+  "closed_on": "2025-03-11",
+  "break_key": "statement-lease:capital_exclusion",
+  "facts": {
+   "line_amount": "117000",
+   "lease_excludes_capital": true,
+   "replacement_or_structural": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "capital_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Roof replacement / resurfacing billed as repairs. Capital costs are excluded by the lease. Credited our share."
+  }
+ },
+ {
+  "case_id": "CASE-0108",
+  "closed_on": "2025-03-10",
+  "break_key": "statement-lease:admin_fee",
+  "facts": {
+   "billed_fee": "36239.9",
+   "lease_max_fee": "27306.11",
+   "lease_fee_pct": "5",
+   "lease_has_fee_clause": true,
+   "fee_exceeds_lease_max": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "fee_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Management fee charged on everything, taxes and insurance included. Credited the excess over the lease maximum and disputed it."
+  }
+ },
+ {
+  "case_id": "CASE-0105",
+  "closed_on": "2025-03-28",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "7.50",
+   "lease_share_pct": "6.66",
+   "share_by_occupied_pct": "7.50",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0117",
+  "closed_on": "2025-05-12",
+  "break_key": "statement-lease:controllable_cap",
+  "facts": {
+   "controllable_billed": "214820",
+   "cap_limit": "201881",
+   "cap_pct": "5",
+   "cap_adjustment_billed": "0",
+   "cap_adjustment_missing": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "cap_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Controllable expenses rose more than the cap and the statement had no cap adjustment. Credited the excess."
+  }
+ },
+ {
+  "case_id": "CASE-0103",
+  "closed_on": "2025-03-19",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "11.89",
+   "lease_share_pct": "10.33",
+   "share_by_occupied_pct": "11.89",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Ravi Shah",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0106",
+  "closed_on": "2025-03-10",
+  "break_key": "statement-lease:tenant_share",
+  "facts": {
+   "billed_share_pct": "5.45",
+   "lease_share_pct": "5",
+   "share_by_occupied_pct": "5.45",
+   "billed_uses_occupied_area": true
+  },
+  "resolution": {
+   "trust": "lease",
+   "actions": [
+    "share_credit",
+    "dispute_notice"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Landlord divided by leased-and-occupied area; the lease says GLA whether or not occupied. Credited the difference line by line and sent the dispute notice."
+  }
+ },
+ {
+  "case_id": "CASE-0126",
+  "closed_on": "2025-04-16",
+  "break_key": "statement-county:property_tax",
+  "facts": {
+   "billed_tax": "46878",
+   "county_tax": "37805",
+   "county_record_found": true,
+   "lease_taxes_actually_paid": true
+  },
+  "resolution": {
+   "trust": "county",
+   "actions": [
+    "tax_credit",
+    "request_tax_bills"
+   ],
+   "resolved_by": "Dana Ortiz",
+   "approved_by": "Sam Lee",
+   "note": "Taxes billed above the county's bill for the parcel. Booked to the county figure and asked the landlord for the tax bills and proof of payment."
+  }
+ }
+]

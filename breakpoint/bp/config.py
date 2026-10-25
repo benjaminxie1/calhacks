@@ -22,7 +22,7 @@ _load_dotenv()
 DATABASE_URL = os.environ.get("BP_DATABASE_URL", "postgresql+psycopg://bp:bp@localhost:5433/breakpoint")
 MODEL = os.environ.get("BP_MODEL", "claude-opus-5-5")
 SEED = int(os.environ.get("SEED", "42"))
-APPROVAL_LIMIT_USD = 500
+APPROVAL_LIMIT_USD = 2500  # the approver agent may approve credits up to this from an active playbook
 
 
 def world_dir(seed: int = SEED, clean: bool = False) -> Path:

@@ -1,7 +1,7 @@
 """Double-entry ledger on Postgres (Formance-style: accounts hold balances per asset).
 
 Write access needs a credential. Only two components are ever issued one: the
-upstream booking system (which posts Meridian's own feed during replay) and the
+upstream AP booking system (which posts Golden Wok's own feed during replay) and the
 executor. Agents never get one (R16). Every entry balances per asset (R7), posted
 entries are immutable (R8), closed periods reject postings (R9), and every posting
 carries an idempotency key so a replay never double-posts (R10).
@@ -21,12 +21,10 @@ from bp.db import bank_outbound, ledger_entries, ledger_lines, periods
 from bp.money import D
 
 CHART = {
-    "client:{id}": "client cash (USD) and positions (one asset per symbol)",
-    "client:{id}:receivable": "amounts the client owes Meridian (negative balance = owed)",
-    "firm:omnibus": "firm bank omnibus account (offset for client ACH)",
-    "revenue:fees": "commission revenue",
-    "street": "market counterparty / clearing (offset for trades)",
-    "issuer:{symbol}": "corporate-action source (dividends, split shares)",
+    "lease:{id}:expense": "CAM expense booked for the lease (operating expenses, taxes, fees)",
+    "lease:{id}:prepaid": "CAM estimates paid to the landlord, not yet applied by a reconciliation",
+    "lease:{id}:payable": "what Golden Wok owes the landlord (negative balance = owed; positive = landlord owes a credit)",
+    "cash:operating": "operating bank account (offset for estimate payments)",
 }
 
 _ISSUED: dict[str, str] = {}
@@ -56,7 +54,7 @@ def _check(credential: str | None) -> str:
     raise CredentialDenied("ledger write rejected: missing or invalid credential")
 
 
-def ensure_periods(conn, months=("2026-07", "2026-08", "2026-09", "2026-10")) -> None:
+def ensure_periods(conn, months=("2026-02", "2026-03", "2026-04", "2026-05")) -> None:
     conn.execute(insert(periods).values([{"period": m, "status": "open"} for m in months])
                  .on_conflict_do_nothing())
 
@@ -146,15 +144,17 @@ def trial_balance(conn) -> dict[str, Decimal]:
     return {a: s for a, s in rows}
 
 
-def client_balances(conn, settled_asof: date | None = None) -> dict[tuple[str, str], Decimal]:
-    """(account_id, asset) -> balance, summing the client's cash/positions and receivable accounts.
-    With settled_asof, only entries settled on or before that date count (custodian basis)."""
-    q = text("""
-        SELECT split_part(l.account, ':', 2) AS acct, l.asset, sum(l.amount) AS bal
-        FROM ledger_lines l JOIN ledger_entries e ON e.txn_id = l.txn_id
-        WHERE l.account LIKE 'client:%' AND (CAST(:d AS date) IS NULL OR e.settle_date <= CAST(:d AS date))
-        GROUP BY 1, 2""")
-    return {(r.acct, r.asset): r.bal for r in conn.execute(q, {"d": settled_asof})}
+def balances(conn, prefix: str = "lease:") -> dict[tuple[str, str], Decimal]:
+    """(account, asset) -> balance for every account under the prefix."""
+    q = text("SELECT account, asset, sum(amount) AS bal FROM ledger_lines WHERE account LIKE :p GROUP BY 1, 2")
+    return {(r.account, r.asset): r.bal for r in conn.execute(q, {"p": prefix + "%"})}
+
+
+def corrections_for(conn, source_ref: str) -> Decimal:
+    """Total credited to a lease's payable by executed corrections for one finding (its detection key)."""
+    q = text("""SELECT coalesce(sum(l.amount), 0) FROM ledger_entries e JOIN ledger_lines l ON l.txn_id = e.txn_id
+                WHERE e.kind = 'correction' AND e.source_ref = :r AND l.account LIKE :pat""")
+    return conn.execute(q, {"r": source_ref, "pat": "%:payable"}).scalar()
 
 
 def entries_for_refs(conn, refs: list[str]) -> dict[str, list[dict]]:
