@@ -5,7 +5,7 @@ resolves the ones it has learned, and asks a human only when it meets something 
 
 **Seats it fills:** trade reconciliation analyst and settlements / cash ops analyst at a retail brokerage.
 
-Built for the Cal Hacks 13.0 Hyphenate track (Autonomous Systems for Finance).
+Built for the Cal Hacks 13.0 Hyphenate track, "The Hyphenated Enterprise: Autonomous Systems for Finance".
 
 ## The moment
 
@@ -26,6 +26,7 @@ Built for the Cal Hacks 13.0 Hyphenate track (Autonomous Systems for Finance).
 | Ledger after replay equals the correct books built from the true world | yes, every client and firm balance |
 | Invariants: trial balance zero daily, entries balanced, no closed-period postings, unique idempotency keys, no floats | all green |
 | Cases closed by an active playbook with no human | 20 of 23 (2 taught, 1 escalated to the controller by design) |
+| Judge-style injections across the quarter (rehearsal) | 38; all landing inside the replay detected and resolved with answer-key amounts |
 | Full 81-day replay with agents | ~13 s |
 
 The client behind the second ACH return never answers the cash call. That case is escalated to the controller after 3
@@ -38,7 +39,7 @@ make setup        # Python 3.12 venv (uv)
 make up           # Postgres in Docker on :5433
 make world        # seeded world + answer key in data/world/seed42 (~6 s)
 make demo         # replay the quarter with scripted people and score it against the answer key
-make test         # 43 tests (T1-T37; T35 generality skipped as the plan's first scope cut)
+make test         # 52 tests (T1-T37 plus model-fallback tests; T35 generality skipped as the plan's first scope cut)
 make api          # builds the dashboard and serves it with the API on http://localhost:8000
 ```
 
@@ -47,7 +48,14 @@ Sam Lee and Dana Ortiz to let the replay run unattended.
 
 With `ANTHROPIC_API_KEY` set in `.env`, the agents decide with Claude (`claude-opus-5-5`, structured outputs). Without
 a key, every agent runs a deterministic offline policy, so tests and the demo are reproducible either way.
-`make test-llm` runs the LLM-dependent tests (T26, T27, T32) three times each against the live model.
+`make test-llm` runs the LLM-dependent tests (T26, T27, T32) three times each against the live model, with
+`BP_LLM_STRICT=1` so a silent fallback to the offline policy fails the test instead of passing it. If a model call is
+refused, malformed, times out (`BP_LLM_TIMEOUT`, default 60 s) or has no credentials, the agent uses its offline policy and
+the event records why. `BP_LLM_AGENTS=investigator,outreach,auditor` limits the model to those agents (a full replay makes
+about 90 model calls).
+
+Live injection (Inject break page) supports B1, B2, B3 and H2. B2 needs a date after Aug 17 and a standard or active
+account. B1, B3 and H2 surface at T+1 settlement, so they are refused on the replay's last day.
 
 ## Architecture
 

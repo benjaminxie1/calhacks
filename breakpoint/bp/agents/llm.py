@@ -27,12 +27,17 @@ SYSTEM = (
 )
 
 
-def backend() -> str:
+def backend(agent: str | None = None) -> str:
     if os.environ.get("BP_LLM", "").lower() == "offline":
         return "offline"
-    if os.environ.get("BP_LLM", "").lower() == "claude" or os.environ.get("ANTHROPIC_API_KEY"):
-        return "claude"
-    return "offline"
+    if not (os.environ.get("BP_LLM", "").lower() == "claude" or os.environ.get("ANTHROPIC_API_KEY")):
+        return "offline"
+    # BP_LLM_AGENTS=investigator,outreach,auditor limits the model to those agents (the rest stay offline),
+    # for when a full replay with the model is too slow to demo live.
+    only = [a.strip() for a in os.environ.get("BP_LLM_AGENTS", "").split(",") if a.strip()]
+    if agent and only and not any(agent.startswith(a) for a in only):
+        return "offline"
+    return "claude"
 
 
 _client = None
@@ -43,7 +48,7 @@ def _claude():
     if _client is None:
         import anthropic
 
-        _client = anthropic.Anthropic()
+        _client = anthropic.Anthropic(timeout=float(os.environ.get("BP_LLM_TIMEOUT", "60")), max_retries=2)
     return _client
 
 
@@ -53,27 +58,48 @@ def _jsonable(x):
     return jsonable(x)
 
 
+class ModelFallback(RuntimeError):
+    """Raised instead of falling back when BP_LLM_STRICT is set (make test-llm), so a live run can't pass offline."""
+
+
+def _fallback(offline: Callable[[], T], why: str) -> tuple[T, str]:
+    if os.environ.get("BP_LLM_STRICT"):
+        raise ModelFallback(why)
+    return offline(), f"offline(fallback: {why})"
+
+
 def decide(agent: str, task: str, payload: dict, schema: type[T], offline: Callable[[], T],
            effort: str = "low") -> tuple[T, str]:
     """Return (answer, backend). Falls back to the offline policy if the model call fails."""
-    if backend() == "offline":
+    if backend(agent) == "offline":
         return offline(), "offline"
-    try:
-        import anthropic
+    import anthropic
+    from pydantic import ValidationError
 
+    try:
         resp = _claude().messages.parse(
             model=config.MODEL,
-            max_tokens=4000,
+            max_tokens=16000,
             system=SYSTEM + f"\n\nYou are the {agent}.",
             output_config={"effort": effort},
             messages=[{"role": "user", "content": f"{task}\n\nEvidence (JSON):\n"
                        + json.dumps(_jsonable(payload), indent=1, sort_keys=True)}],
             output_format=schema,
         )
-        if resp.stop_reason == "refusal" or resp.parsed_output is None:
-            return offline(), "offline(fallback: refusal)"
+        if resp.stop_reason == "refusal":
+            return _fallback(offline, "refusal")
+        if resp.parsed_output is None:
+            return _fallback(offline, f"no output, {resp.stop_reason}")
         return resp.parsed_output, "claude"
-    except anthropic.APIConnectionError:
-        return offline(), "offline(fallback: connection)"
+    except ValidationError:  # truncated or malformed structured output
+        return _fallback(offline, "invalid output")
+    except anthropic.APIConnectionError:  # includes timeouts
+        return _fallback(offline, "connection")
     except anthropic.APIStatusError as e:
-        return offline(), f"offline(fallback: {e.status_code})"
+        return _fallback(offline, str(e.status_code))
+    except anthropic.AnthropicError as e:
+        return _fallback(offline, f"client error: {e}")
+    except TypeError as e:  # the SDK raises TypeError when BP_LLM=claude but no credentials are set
+        if "authentication" not in str(e):
+            raise
+        return _fallback(offline, "no credentials")

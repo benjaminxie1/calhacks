@@ -74,6 +74,17 @@ def test_T32_ask_why(quarter, attempt):
     assert "wf-ledger-custodian-position-qty" in ans["answer"] and "Dana Ortiz" in ans["answer"]
 
 
+def test_T33_injection_past_the_end_is_refused(store):
+    """A break that would only surface after the replay's last day is refused with a reason, not silently missed."""
+    from bp.world.live import build
+    acct = next(a.account_id for a in store.accounts if a.tier == "standard")
+    for kind in ("B1", "B3", "H2"):
+        with pytest.raises(ValueError, match="replay ends"):
+            build(store, kind, acct, "KO", date(2026, 10, 23), 1)
+    assert build(store, "B1", acct, "KO", date(2026, 10, 22), 1)["answer_key"]
+    assert build(store, "B2", acct, "KO", date(2026, 10, 23), 1)["answer_key"]
+
+
 def test_T33_live_injection(db, store):
     """R26: a B2 injected from the UI is detected and handled within one replay day."""
     rp = Replay(eng=db, store=store, controller_mode="scripted", teach_mode="scripted")

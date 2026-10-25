@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from bp.calendar import next_bd
+from bp.calendar import END, next_bd
 from bp.models import Posting
 from bp.money import D, cents, s
 from bp.sources.store import SourceStore
@@ -20,6 +20,11 @@ def build(store: SourceStore, kind: str, account_id: str, symbol: str, on: date,
     if account_id not in store.tier:
         raise ValueError(f"unknown account {account_id}")
     tier = store.tier[account_id]
+    # B1, B3 and H2 only show up when the custodian settles (T+1); B2 shows on the trade date.
+    lands = on if kind == "B2" else next_bd(on)
+    if lands > END:
+        raise ValueError(f"the replay ends {END}; a {kind} injected for {on} would only show up on {lands}. "
+                         "Reset the replay or inject earlier (B2 still works on the last day)")
     px = store.price(on, symbol)
     qty = D(100) if px < 200 else D(20)
     exec_qty = qty * D(6) / D(10) if kind == "B1" else qty

@@ -28,7 +28,7 @@ test:
 	$(PY) -m pytest -q
 
 test-llm:
-	BP_LLM=claude $(PY) -m pytest -q -m llm --count 3
+	BP_LLM=claude BP_LLM_STRICT=1 $(PY) -m pytest -q -m llm
 
 eval:
 	$(PY) -m bp.eval
